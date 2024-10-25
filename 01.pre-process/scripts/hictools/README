@@ -1,0 +1,21 @@
+
+### hictools helps to extract and retain the barcode information from Droplet Hi-C and Paired Hi-C data.
+
+To use hictools, you need to first compile the program:
+`g++ -g hictools.cpp -o hictools`
+
+To use hictools, you need to have the 10X libraries fastq in your working directory. For example, HC001_R1.fq.gz, HC001_R2.fq.gz, HC001_R3.fq.gz.
+Next, process the fastq with: 
+```
+hictools combine_hic atac HC001
+(zcat HC001_R1_combined.fq.gz | bowtie -x ${ref_10X} - --nofw -m 1 -v 1 -S HC001_R1_BC.sam) 2>HC001_R1.log
+zcat HC001_R3_combined.fq.gz| bowtie -x ${ref_10X} - --nofw -m 1 -v 1 -S HC003_R3_BC.sam
+
+hictools convert_hic2 HC001_R1_BC.sam
+hictools convert_hic2 HC001_R3_BC.sam
+```
+Where ${ref_10X} is the bowtie index for the 10X barcode whitelist.
+
+The HC001_R1_BC_cov.fq.gz and HC001_R3_BC_cov.fq.gz are ready to align. More details can be found in https://github.com/Xieeeee/Droplet-Hi-C/tree/main/01.pre-process/scripts
+
+
