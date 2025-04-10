@@ -1,4 +1,50 @@
 # Droplet Hi-C
+This is a modified version of the [Droplet Hi-C processing pipeline](https://github.com/Xieeeee/Droplet-Hi-C), enhanced with parallelization support and more flexible script parameters.
+
+#### Requirements:
+
+*hictools*: compile from `Droplet-Hi-C/01.pre-process/scripts/hictools/` and put the binaries to your $PATH
+
+*schicluster*: https://github.com/zhoujt1994/scHiCluster
+
+*pairtools*: https://pairtools.readthedocs.io/en/latest/installation.html
+
+Common NGS tools: *samtools, trim_galore, bwa, bgzip*
+
+Python packages: *Anndata, cooler, scanpy, cutadapt, numpy, pandas, h5py*
+
+R packages: *ggplot2, dplyr, scales, grid, R.utils, data.table, Matrix, dichromat, viridis, reshape2, ggbreak, patchwork*
+
+#### Usage:
+
+```shell
+git clone https://github.com/zhaoshuoxp/Droplet-Hi-C.git
+cd Droplet-Hi-C
+```
+
+Now edit the all the `preproc_paired_hic_v3.sh` shell scripts to change the path to bwa indexes of hg38 and mm10.
+
+then run the whole process by:
+
+```shell
+cd <your working path having /fastq/sample_R1|2|3.fq.gz>
+/path/to/Droplet-Hi-C/run -s <Sample prefix> -t <threads> -r <resolution 10,25,100> -g <genome, mm10 or hg38> -m <capture kit using, atac or arc >
+```
+
+##### Defaults
+
+```shell
+-s none
+-t 24
+-r 10
+-g mm10
+-m atac
+```
+
+# 
+
+### Original README [https://github.com/Xieeeee/Droplet-Hi-C](https://github.com/Xieeeee/Droplet-Hi-C)
+
 Droplet Hi-C is a cheap, convenient and scalable method for chromatin architecture profiling in single cells, based on the widely available 10X Chromium Single Cell ATAC platform.
 
 

@@ -3,6 +3,7 @@
 genome="mm10"
 threads=24
 res_array=(10)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 while getopts "s:g:r:t:" opt; do
   case ${opt} in
@@ -20,11 +21,11 @@ if [ -z "${sample}" ]; then
 fi
 
 if [[ "${genome}" == "mm10" ]]; then
-    gene_meta="/nfs/baldar/quanyiz/app/Droplet-Hi-C/01.pre-process/bed/mm10_gene_anno.bed"
-    chrom_size="/home/quanyiz/genome/mm10/mm10.chrom.sizes"
+    gene_meta=$SCRIPT_DIR"/01.pre-process/bed/mm10_gene_anno.bed"
+    chrom_size=$SCRIPT_DIR"/01.pre-process/supp/mm10.chrom.sizes"
 elif [[ "${genome}" == "hg38" ]]; then
-    gene_meta="/nfs/baldar/quanyiz/app/Droplet-Hi-C/01.pre-process/bed/hg38_gene_anno.bed"
-    chrom_size="/home/quanyiz/genome/hg38/hg38.chrom.sizes"
+    gene_meta=$SCRIPT_DIR"/01.pre-process/bed/hg38_gene_anno.bed"
+    chrom_size=$SCRIPT_DIR"/01.pre-process/supp/hg38.chrom.sizes"
 else
     echo "Unsupported genome: ${genome}"
     exit 1
@@ -65,7 +66,7 @@ for r in "${res_array[@]}"; do
         --mode impute
         
     echo "Making AnnData at ${r}kb..."
-    /nfs/baldar/quanyiz/app/Droplet-Hi-C/01.pre-process/scripts/phc.make_adata.py \
+    $SCRIPT_DIR/01.pre-process/scripts/phc.make_adata.py \
     -r $r \
     --genome $genome \
     $chrom_size \

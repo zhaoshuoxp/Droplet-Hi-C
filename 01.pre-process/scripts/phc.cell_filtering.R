@@ -1,9 +1,9 @@
 #!/usr/bin/env Rscript
 suppressPackageStartupMessages(library(dplyr))
 library(ggplot2)
-source("/nfs/baldar/quanyiz/app/Droplet-Hi-C/02.analysis/scripts/phc_help.R")
-source("/nfs/baldar/quanyiz/app/Droplet-Hi-C/02.analysis/scripts/DPT_help.R")
-source("/nfs/baldar/quanyiz/app/Droplet-Hi-C/02.analysis/scripts/basics.R")
+source("../../02.analysis/scripts/phc_help.R")
+source("../../02.analysis/scripts/DPT_help.R")
+source("../../02.analysis/scripts/basics.R")
 
 options<-commandArgs(trailingOnly = T)
 

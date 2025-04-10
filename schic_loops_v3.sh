@@ -3,8 +3,8 @@
 genome="mm10"
 threads=24
 res_array=(10)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 参数解析
 while getopts "g:r:t:" opt; do
   case ${opt} in
     g) genome=${OPTARG} ;;
@@ -21,10 +21,10 @@ meta="${current}/cell.id"
 
 if [[ "${genome}" == "mm10" ]]
 then
-    chrom_size="/home/quanyiz/genome/mm10/mm10.chrom.sizes"
+    chrom_size=$SCRIPT_DIR"/01.pre-process/supp/mm10.chrom.sizes"
 elif [[ "${genome}" == "hg38" ]]
 then
-    chrom_size="/home/quanyiz/genome/hg38/hg38.chrom.sizes"
+    chrom_size=$SCRIPT_DIR"/01.pre-process/supp/hg38.chrom.sizes"
 fi
 
 for r in "${res_array[@]}"; do

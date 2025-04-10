@@ -1,6 +1,7 @@
 #!/bin/bash
 
 current=$(pwd)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Parse command-line arguments
 while getopts "s:g:m:o:t:" opt; do
@@ -20,16 +21,16 @@ trim_dir="${current}/trimmed/"
 map_dir="${current}/mapping/"
 old_map_dir="${current}/prev_mapping/"
 mtx_dir="${current}/matrices/"
-script_dir="/home/quanyiz/baldar/app/Droplet-Hi-C/01.pre-process/scripts"
+script_dir=$SCRIPT_DIR"/01.pre-process/scripts"
 
 mm10_bwa="/home/quanyiz/genome/mm10/BWAindex/mm10bwa"
 hg38_bwa="/home/quanyiz/genome/hg38/BWAindex/hg38bwa"
-mm10_chrsize="/home/quanyiz/genome/mm10/mm10.chrom.sizes"
-hg38_chrsize="/home/quanyiz/genome/hg38/hg38.chrom.sizes"
-mm10_bl="/home/quanyiz/genome/mm10/mm10-blacklist.v2.bed"
-hg38_bl="/home/quanyiz/genome/hg38/hg38-blacklist.v2.bed" 
-atac_10X="/home/quanyiz/baldar/app/Droplet-Hi-C/01.pre-process/10xBC_index/737K-cratac-v1"
-arc_10X="/home/quanyiz/baldar/app/Droplet-Hi-C/01.pre-process/10xBC_index/737K-arc-v1"
+mm10_chrsize=$SCRIPT_DIR"/01.pre-process/supp/mm10.chrom.sizes"
+hg38_chrsize=$SCRIPT_DIR"/01.pre-process/supp/hg38.chrom.sizes"
+mm10_bl=$SCRIPT_DIR"/01.pre-process/supp/mm10-blacklist.v2.bed"
+hg38_bl=$SCRIPT_DIR"/01.pre-process/supp/hg38-blacklist.v2.bed" 
+atac_10X=$SCRIPT_DIR"/01.pre-process/10xBC_index/737K-cratac-v1"
+arc_10X=$SCRIPT_DIR"/01.pre-process/10xBC_index/737K-arc-v1"
 ##################################
 
 if [ -z ${genome+x} ]; then echo "genome is not specified. Default to mm10"; genome="mm10"; fi
