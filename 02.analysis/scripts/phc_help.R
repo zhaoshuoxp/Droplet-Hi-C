@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+#!/usr/bin/env Rscript
+=======
+>>>>>>> upstream/main
 library(Matrix)
 suppressPackageStartupMessages(library(dplyr))
 library(ggplot2)
@@ -225,7 +229,11 @@ inter_p_cnv <- function(tmtx, i){
 }
 
 FindTrans <- function(tmtx, p_cutoff = 0.01, chrom_norm = TRUE, 
+<<<<<<< HEAD
+                          chromsize = "/home/quanyiz/genome/mm10/mm10.chrom.sizes") {
+=======
                           chromsize = "/projects/ps-renlab2/y2xie/projects/genome_ref/hg38.main.chrom.sizes") {
+>>>>>>> upstream/main
     ### input: cooler dump contacts info, with chrom1-start1 being the query bin. 
     ### will calculate and test for all chromosomes
     chromsize = read.table(chromsize)
@@ -268,7 +276,11 @@ FindTrans <- function(tmtx, p_cutoff = 0.01, chrom_norm = TRUE,
 }
 
 FindTransNorm <- function(tmtx, p_cutoff = 0.01, chrom_norm = TRUE, 
+<<<<<<< HEAD
+                          chromsize = "/home/quanyiz/genome/mm10/mm10.chrom.sizes") {
+=======
                           chromsize = "/projects/ps-renlab2/y2xie/projects/genome_ref/hg38.main.chrom.sizes") {
+>>>>>>> upstream/main
     chromsize = read.table(chromsize)
     ### input: cooler dump contacts info, with chrom1-start1 being the query bin. 
     ### will calculate and test for all chromosomes

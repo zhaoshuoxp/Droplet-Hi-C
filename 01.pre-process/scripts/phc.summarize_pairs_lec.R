@@ -1,4 +1,4 @@
-
+#!/usr/bin/env Rscript
 suppressPackageStartupMessages(library(R.utils))
 suppressPackageStartupMessages(library(data.table))
 suppressPackageStartupMessages(library(dplyr))
@@ -8,6 +8,7 @@ pairs <- args[1] # .pairparse.txt or .pairdedup.txt to summarize
 pname <- substr(pairs, 0, nchar(pairs) - 4)
 
 tmp <- read.table(paste0(pairs), header = F, sep = "\t", row.names = 1)
+tmp[,1] <- as.numeric(tmp[,1])
 tmp1 <- tmp %>% filter(row.names(tmp) %in% c("total", "total_unmapped", "total_single_sided_mapped", "total_mapped", "total_dups", "total_nodups", "cis_1kb+", "cis_20kb+", "cis", "trans")) %>% 
 t() %>% as.data.frame() %>%
 mutate(Sequenced_Read_Pairs = sum(total_unmapped, total_single_sided_mapped, total_dups, total_nodups),

@@ -7,7 +7,11 @@
 library(Matrix)
 library(dichromat)
 library(viridis)
+<<<<<<< HEAD
+source("/home/quanyiz/baldar/app/Droplet-Hi-C/02.analysis/scripts/basics.R")
+=======
 source("/projects/ps-renlab2/y2xie/scripts/basics.R")
+>>>>>>> upstream/main
 
 tori <- c("#477a96", "#c3533d", "#85212b", "#bcc9d1", "#6a9d84")
 colfunc2 <- colorRampPalette(c(tori))
@@ -133,7 +137,11 @@ PlotArcFragment <- function(frag_path, prefix){
 
 ### After in-house processing of 10X Multiome, merge both modalities for plotting ###
 PairArc <- function(dmat, rmat, names = "atac"){
+<<<<<<< HEAD
+    translate <- read.table("/home/quanyiz/baldar/app/Droplet-Hi-C/01.pre-process/supp/arc_bc-translation.txt", header = T, row.names = 1, sep = "\t")
+=======
     translate <- read.table("/projects/ps-renlab/y2xie/projects/genome_ref/arc_bc-translation.txt", header = T, row.names = 1, sep = "\t")
+>>>>>>> upstream/main
     translate$atac <- paste0(translate$atac, "-1")
     translate$rna <- paste0(translate$rna, "-1")
     # rownames(translate) <- paste0(translate$rna, "-1")
@@ -158,7 +166,11 @@ PlotArcPair <- function(pair, dcutoff = 100, rcutoff = 100, prefix, names = "ata
     if((!all(c("bc", "dna_count", "rna_count") %in% colnames(pair)))){
         stop('colnames of input dataframe should be c("bc", "dna_count", "rna_count")')
     }
+<<<<<<< HEAD
+    translate <- read.table("/home/quanyiz/baldar/app/Droplet-Hi-C/01.pre-process/supp/arc_bc-translation.txt", header = T, row.names = 1, sep = "\t")
+=======
     translate <- read.table("/projects/ps-renlab/y2xie/projects/genome_ref/arc_bc-translation.txt", header = T, row.names = 1, sep = "\t")
+>>>>>>> upstream/main
     translate$atac <- paste0(translate$atac, "-1")
     translate$rna <- paste0(translate$rna, "-1")
     
@@ -192,7 +204,11 @@ PlotArcPair_d <- function(pair, dcutoff = 100, rcutoff = 100, prefix, names = "a
     if((!all(c("bc", "dna_count", "rna_count") %in% colnames(pair)))){
         stop('colnames of input dataframe should be c("bc", "dna_count", "rna_count")')
     }
+<<<<<<< HEAD
+    translate <- read.table("/home/quanyiz/baldar/app/Droplet-Hi-C/01.pre-process/supp/arc_bc-translation.txt", header = T, row.names = 1, sep = "\t")
+=======
     translate <- read.table("/projects/ps-renlab/y2xie/projects/genome_ref/arc_bc-translation.txt", header = T, row.names = 1, sep = "\t")
+>>>>>>> upstream/main
     translate$atac <- paste0(translate$atac, "-1")
     translate$rna <- paste0(translate$rna, "-1")
     
@@ -235,7 +251,11 @@ PlotArcPair2 <- function(pair, dvalid, rvalid, prefix, names = "atac"){
     if(!identical(colnames(pair), c("bc", "dna_count", "rna_count"))){
         stop('colnames of input dataframe should be c("bc", "dna_count", "rna_count")')
     }
+<<<<<<< HEAD
+    translate <- read.table("/home/quanyiz/baldar/app/Droplet-Hi-C/01.pre-process/supp/arc_bc-translation.txt", header = T, row.names = 1, sep = "\t")
+=======
     translate <- read.table("/projects/ps-renlab/y2xie/projects/genome_ref/arc_bc-translation.txt", header = T, row.names = 1, sep = "\t")
+>>>>>>> upstream/main
     translate$atac <- paste0(translate$atac, "-1")
     translate$rna <- paste0(translate$rna, "-1")
     pair$rna_bc <- translate[match(pair$bc, translate$atac), "rna"]
@@ -660,7 +680,11 @@ ProcessRNA_hicat <- function(rna_path, valid){
         library(Seurat)
         source("/projects/ps-renlab2/y2xie/scripts/hicat_doubletfinder_mo.R")
         source("/projects/ps-renlab2/y2xie/scripts/hicat_vg.R")
+<<<<<<< HEAD
+        source("/home/quanyiz/baldar/app/Droplet-Hi-C/02.analysis/scripts/DPT_help.R")
+=======
         source("/projects/ps-renlab2/y2xie/scripts/DPT_help.R")
+>>>>>>> upstream/main
         score <- doubletfinder(mmg, VariableFeatures(mmg), proportion.artificial = part, plot = F)
         return(score)
     }

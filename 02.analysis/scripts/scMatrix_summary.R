@@ -1,4 +1,4 @@
-#!/projects/ps-renlab/y2xie/anaconda3/envs/seurat/bin Rscript
+#!/usr/bin/env Rscript
 suppressPackageStartupMessages(library(Matrix))
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(dplyr))

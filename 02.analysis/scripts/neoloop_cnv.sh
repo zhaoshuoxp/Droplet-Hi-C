@@ -33,11 +33,11 @@ fi
 
 if [ $genome == "mm10" ]
 then
-	chrsize=/projects/ps-renlab/y2xie/projects/genome_ref/mm10.main.chrom.sizes
+	chrsize=/home/quanyiz/genome/mm10/mm10.chrom.sizes
 	species=mouse
 elif [ $genome == "hg38" ] 
 then
-	chrsize=/projects/ps-renlab/y2xie/projects/genome_ref/hg38.main.chrom.sizes
+	chrsize=/home/quanyiz/genome/hg38/hg38.chrom.sizes
 	species=human
 fi
 

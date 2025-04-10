@@ -1,4 +1,4 @@
-
+#!/usr/bin/env Rscript
 suppressPackageStartupMessages(library(R.utils))
 suppressPackageStartupMessages(library(data.table))
 suppressPackageStartupMessages(library(dplyr))

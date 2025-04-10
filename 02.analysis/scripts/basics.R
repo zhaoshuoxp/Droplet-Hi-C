@@ -1,4 +1,8 @@
+<<<<<<< HEAD
+#!/usr/bin/env Rscript
+=======
 
+>>>>>>> upstream/main
 ## set colors
 library(dichromat)
 # library(wesanderson)
@@ -71,7 +75,11 @@ RunDNAMask <- function(x, maskMT=TRUE, maskBL=TRUE, maskSex=FALSE){
   } else{cat("no mt masking is done.\n")}
   if(maskBL){
     cat("read in encode blacklist bed file...\n")
+<<<<<<< HEAD
+    black_list = read.table("/home/quanyiz/genome/mm10/mm10-blacklist.v2.bed")
+=======
     black_list = read.table("/projects/ps-renlab/y2xie/projects/genome_ref/mm10.blacklist.bed")
+>>>>>>> upstream/main
     black_list.gr = GenomicRanges::GRanges(black_list[,1], IRanges::IRanges(black_list[,2], black_list[,3]))
     idy = S4Vectors::queryHits(GenomicRanges::findOverlaps(GenomicRanges::GRanges(rownames(x)), black_list.gr))
     cat("there are",nrow(x),"bins before blacklist masking\n", sep = " ")
