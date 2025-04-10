@@ -28,7 +28,7 @@ then run the whole process by:
 
 ```shell
 cd <your working path having /fastq/sample_R1|2|3.fq.gz>
-/path/to/Droplet-Hi-C/run -s <Sample prefix> -t <threads> -r <resolution 10,25,100> -g <genome, mm10 or hg38> -m <capture kit using, atac or arc >
+/path/to/Droplet-Hi-C/run.sh -s <Sample prefix> -t <threads> -r <resolution 10,25,100> -g <genome, mm10 or hg38> -m <capture kit using, atac or arc >
 ```
 
 ##### Defaults
