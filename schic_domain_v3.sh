@@ -17,8 +17,6 @@ if [ -z "${sample}" ]; then
   exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 current=$(pwd)
 imputed_matrix="${current}/hicluster/imputed_matrix"
 
@@ -38,7 +36,7 @@ for r in "${res_array[@]}"; do
         --cell_table_path "${cell_table}" \
         --output_prefix "${imputed_matrix}/${r}kb_resolution/domain/${sample}" \
         --resolution "${r}000" \
-        --window_size 10 \
+        --window_size 20 \
         --cpu "${threads}"
 
     echo "Domain calling done for ${r}kb"

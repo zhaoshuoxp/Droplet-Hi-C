@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from scipy.sparse import csr_matrix
 from scipy.stats import rankdata
-from scipy.io.mmio import MMFile
+from scipy.io import mmwrite
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Process gene data and generate mtx for gene score.")
@@ -18,11 +18,7 @@ def parse_args():
     parser.add_argument('gene_hdf_path', type=str, help="Path to the gene HDF file.")
     parser.add_argument('sample', type=str, help="Sample name.")
     return parser.parse_args()
-    
-# Override MMFile to prevent scientific notation in output
-class MMFileFixedFormat(MMFile):
-    def _field_template(self, field, precision):
-        return f'%.{precision}f\n'
+
 
 def main():
     # Parse arguments
@@ -82,7 +78,8 @@ def main():
     pd.DataFrame(gene3c_genes).to_csv(f'hicluster/imputed_matrix/{args.res}kb_resolution/genescore/geneimputescore.genes.tsv', sep='\t')
 
     # Write the sparse matrix to a file
-    MMFileFixedFormat().write(f'hicluster/imputed_matrix/{args.res}kb_resolution/genescore/geneimputescore.mtx', gene3c_mtx, precision=2)
+    output_mtx_path = f'hicluster/imputed_matrix/{args.res}kb_resolution/genescore/geneimputescore.mtx'
+    mmwrite(output_mtx_path, gene3c_mtx, precision=2)
 
 if __name__ == "__main__":
     main()

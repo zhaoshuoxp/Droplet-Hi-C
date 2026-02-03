@@ -3,11 +3,12 @@ import argparse
 import h5py
 import cooler
 import anndata
+import scanpy as sc
 import numpy as np
 import pandas as pd
 from scipy.sparse import csr_matrix
 from scipy.stats import rankdata
-from scipy.io.mmio import MMFile
+from scipy.io import mmwrite
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Process gene data and generate mtx for gene score.")
@@ -17,11 +18,7 @@ def parse_args():
     parser.add_argument('gene_hdf_path', type=str, help="Path to the gene HDF file.")
     parser.add_argument('sample', type=str, help="Sample name.")
     return parser.parse_args()
-    
-# Override MMFile to prevent scientific notation in output
-class MMFileFixedFormat(MMFile):
-    def _field_template(self, field, precision):
-        return f'%.{precision}f\n'
+
 
 def main():
     # Parse arguments
@@ -51,11 +48,11 @@ def main():
     stat.columns.values[0] = 'cool_cell'
     tmeta = gene3c.obs.merge(stat, left_index=True, right_on='cool_cell')
     tmeta.index = tmeta['cool_cell']
-
-    # Filter gene3c AnnData
-    gene3c = gene3c[tmeta['cool_cell'], :]
+    tmeta = tmeta.drop(columns=['cool_cell'])
+    gene3c = gene3c[tmeta.index, :]
     gene3c.obs = tmeta
 
+    # Filter gene3c AnnData
     genefilter = ((gene3c.X > 0).sum(axis=0) > 10) & (gene3c.var.index.isin(gene_meta['gene_name']))
     gene3c = gene3c[:, genefilter]
 
@@ -81,7 +78,8 @@ def main():
     pd.DataFrame(gene3c_genes).to_csv(f'hicluster/imputed_matrix/{args.res}kb_resolution/genescore/geneimputescore.genes.tsv', sep='\t')
 
     # Write the sparse matrix to a file
-    MMFileFixedFormat().write(f'hicluster/imputed_matrix/{args.res}kb_resolution/genescore/geneimputescore.mtx', gene3c_mtx, precision=2)
+    output_mtx_path = f'hicluster/imputed_matrix/{args.res}kb_resolution/genescore/geneimputescore.mtx'
+    mmwrite(output_mtx_path, gene3c_mtx, precision=2)
 
 if __name__ == "__main__":
     main()

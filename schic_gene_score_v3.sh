@@ -3,7 +3,6 @@
 genome="mm10"
 threads=24
 res_array=(10)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 while getopts "s:g:r:t:" opt; do
   case ${opt} in
@@ -11,7 +10,7 @@ while getopts "s:g:r:t:" opt; do
     g) genome=${OPTARG} ;;
     r) IFS=',' read -ra res_array <<< "${OPTARG}" ;;
     t) threads=${OPTARG} ;;
-    *) echo "Usage: $0 [-g genome] [-r res1,res2,...] [-t threads]"; exit 1 ;;
+    *) echo "Usage: $0 [-s sample] [-g genome] [-r res1,res2,...] [-t threads]"; exit 1 ;;
   esac
 done
 
@@ -21,11 +20,11 @@ if [ -z "${sample}" ]; then
 fi
 
 if [[ "${genome}" == "mm10" ]]; then
-    gene_meta=$SCRIPT_DIR"/01.pre-process/bed/mm10_gene_anno.bed"
-    chrom_size=$SCRIPT_DIR"/01.pre-process/supp/mm10.chrom.sizes"
+    gene_meta="/nfs/baldar/quanyiz/app/Droplet-Hi-C/01.pre-process/bed/mm10_gene_anno.bed"
+    chrom_size="/home/quanyiz/genome/mm10/mm10_noYM.chrom.sizes"
 elif [[ "${genome}" == "hg38" ]]; then
-    gene_meta=$SCRIPT_DIR"/01.pre-process/bed/hg38_gene_anno.bed"
-    chrom_size=$SCRIPT_DIR"/01.pre-process/supp/hg38.chrom.sizes"
+    gene_meta="/nfs/baldar/quanyiz/app/Droplet-Hi-C/01.pre-process/bed/hg38_gene_anno.bed"
+    chrom_size="/home/quanyiz/genome/hg38/hg38_noYM.chrom.sizes"
 else
     echo "Unsupported genome: ${genome}"
     exit 1
@@ -37,21 +36,23 @@ imputed_matrix="${current}/hicluster/imputed_matrix"
 for r in "${res_array[@]}"; do
     echo "Processing resolution ${r}kb..."
 
+    mkdir -p "${imputed_matrix}/${r}kb_resolution/filelist"
     cell_table="${imputed_matrix}/${r}kb_resolution/filelist/cell_table.tsv"
 
-    if [[ -f ${cell_table} ]]; then
-        echo "Cell table exists for ${r}kb"
-    else
-        mkdir -p "${imputed_matrix}/${r}kb_resolution/filelist"
-        ls "${imputed_matrix}/${r}kb_resolution/cool/" | grep '.cool' | \
-        awk -v p="${imputed_matrix}/${r}kb_resolution/cool" '{printf("%s/%s\n", p, $0)}' > "${imputed_matrix}/${r}kb_resolution/filelist/cell.txt"
+    echo "Generating/Updating cell table for ${r}kb..."
 
-        paste <(awk -F'/' '{print $NF}' "${imputed_matrix}/${r}kb_resolution/filelist/cell.txt" | cut -d. -f1) \
-              "${imputed_matrix}/${r}kb_resolution/filelist/cell.txt" | sort -k1,1 \
-              > "${imputed_matrix}/${r}kb_resolution/filelist/cell.txt.tmp"
-        
-        mv "${imputed_matrix}/${r}kb_resolution/filelist/cell.txt.tmp" "${cell_table}"
+    find "${imputed_matrix}/${r}kb_resolution/cool" -name "*.cool" > "${imputed_matrix}/${r}kb_resolution/filelist/valid_paths.txt"
+
+    if [[ ! -s "${imputed_matrix}/${r}kb_resolution/filelist/valid_paths.txt" ]]; then
+        echo "Error: No .cool files found in ${imputed_matrix}/${r}kb_resolution/cool/"
+        continue
     fi
+
+    awk -F'/' '{print $NF}' "${imputed_matrix}/${r}kb_resolution/filelist/valid_paths.txt" | sed 's/\.cool$//' > "${imputed_matrix}/${r}kb_resolution/filelist/ids.txt"
+
+    paste "${imputed_matrix}/${r}kb_resolution/filelist/ids.txt" "${imputed_matrix}/${r}kb_resolution/filelist/valid_paths.txt" | sort -k1,1 > "${cell_table}"
+
+    echo "Cell table updated. Total cells: $(wc -l < ${cell_table})"
 
     mkdir -p "${imputed_matrix}/${r}kb_resolution/genescore"
 
@@ -66,7 +67,7 @@ for r in "${res_array[@]}"; do
         --mode impute
         
     echo "Making AnnData at ${r}kb..."
-    $SCRIPT_DIR/01.pre-process/scripts/phc.make_adata.py \
+    /nfs/baldar/quanyiz/app/Droplet-Hi-C/01.pre-process/scripts/phc.make_adata.py \
     -r $r \
     --genome $genome \
     $chrom_size \

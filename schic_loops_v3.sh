@@ -2,8 +2,7 @@
 
 genome="mm10"
 threads=24
-res_array=(10)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+res_array=(50)
 
 while getopts "g:r:t:" opt; do
   case ${opt} in
@@ -21,10 +20,10 @@ meta="${current}/cell.id"
 
 if [[ "${genome}" == "mm10" ]]
 then
-    chrom_size=$SCRIPT_DIR"/01.pre-process/supp/mm10.chrom.sizes"
+    chrom_size="/home/quanyiz/genome/mm10/mm10_noYM.chrom.sizes"
 elif [[ "${genome}" == "hg38" ]]
 then
-    chrom_size=$SCRIPT_DIR"/01.pre-process/supp/hg38.chrom.sizes"
+    chrom_size="/home/quanyiz/genome/hg38/hg38_noYM.chrom.sizes"
 fi
 
 for r in "${res_array[@]}"; do
@@ -42,15 +41,31 @@ loop_bkg_cell() {
     echo "[`date`] Start cell: $s (line $i)"
     for r in "${res_array[@]}"; do
         for c in $chroms; do
-            [[ "$c" == "chr*" ]] && break
+            [[ "$c" != "chr"* ]] && continue
             [[ "$c" == "chrM" || "$c" == "chrY" ]] && continue
-            echo "Processing resolution ${r}kb for cell ${s} (chromosome ${c})"
+
+            file_pattern="${imputed_matrix}/${r}kb_resolution/${c}/${s}_${c}_pad?_std1.0_rp0.5_sqrtvc.hdf5"
+
+            files=( $file_pattern )
+            input_file="${files[0]}"
+
+            if [[ ! -f "$input_file" ]]; then
+                continue
+            fi
+
+            if [[ "$input_file" == *"_pad1_"* ]]; then
+                pad_val=1
+            else
+                pad_val=2
+            fi
+
+            echo "Processing resolution ${r}kb for cell ${s} (chromosome ${c}) using pad${pad_val}"
             hicluster loop-bkg-cell --indir "${imputed_matrix}/${r}kb_resolution/" \
             --cell ${s} \
             --chrom ${c} \
-            --impute_mode pad2_std1.0_rp0.5_sqrtvc \
+            --impute_mode "pad${pad_val}_std1.0_rp0.5_sqrtvc" \
             --res "${r}000" \
-            --pad 2 \
+            --pad ${pad_val} \
             --dist 10000000
         done
     done
@@ -74,8 +89,17 @@ echo "✅ Background processing finished."
 loop_sumcell_cell() {
     c=$1
     for r in "${res_array[@]}"; do
-        ls "${imputed_matrix}/${r}kb_resolution/${c}" | grep "pad2_std1.0_rp0.5_sqrtvc.hdf5" - | grep -f ${meta} - | sed 's/.hdf5//g' - > "${imputed_matrix}/${r}kb_resolution/filelist/imputematrices_${c}_1.txt"
-        awk -v path="${imputed_matrix}/${r}kb_resolution/${c}/" '{print path $0}' "${imputed_matrix}/${r}kb_resolution/filelist/imputematrices_${c}_1.txt" > "${imputed_matrix}/${r}kb_resolution/filelist/imputematrices_${c}.txt"
+
+        echo "Generating file list for ${c}..."
+        find "${imputed_matrix}/${r}kb_resolution/${c}" -name "*_dist_trim.E.npz" \
+        | sed "s/_dist_trim.E.npz//g" \
+        | grep -F -f "${meta}" \
+        > "${imputed_matrix}/${r}kb_resolution/filelist/imputematrices_${c}.txt"
+
+        if [[ ! -s "${imputed_matrix}/${r}kb_resolution/filelist/imputematrices_${c}.txt" ]]; then
+            echo "Warning: No valid matrix files found for ${c}. Skipping."
+            continue
+        fi
         
         echo "Summing loop for resolution ${r}kb on chromosome ${c}..."
         hicluster loop-sumcell-chr --cell_list "${imputed_matrix}/${r}kb_resolution/filelist/imputematrices_${c}.txt" \
@@ -83,7 +107,6 @@ loop_sumcell_cell() {
             --res "${r}000"
     done
 }
-
 
 run_pool_sumcell() {
     while (( $(jobs -rp | wc -l) >= threads )); do
@@ -101,9 +124,15 @@ echo "✅ Cell summing finished."
 
 for r in "${res_array[@]}"; do
     echo "Merging results for resolution ${r}kb..."
-    hicluster loop-mergechr --inprefix "${imputed_matrix}/${r}kb_resolution/matrices/imputematrices" \
+    dist_val=$((r * 2000))
+    
+    hicluster loop-mergechr \
+        --inprefix "${imputed_matrix}/${r}kb_resolution/matrices/imputematrices" \
         --outprefix "${imputed_matrix}/${r}kb_resolution/loop/imputematrices" \
-        --chrom_file "${chrom_size}"
+        --chrom_file "${chrom_size}" \
+        --res "${r}000" \
+        --dist_thres "${dist_val}" \
+        --fdr_thres 0.1
 done
 
 echo "✅ Loop merge finished for all resolutions."

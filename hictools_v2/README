@@ -1,0 +1,2 @@
+To compile:
+g++ -O3 -o hictools hictools.cpp cxstring.cpp

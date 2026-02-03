@@ -9,6 +9,7 @@ library(dichromat)
 library(viridis)
 source("/home/quanyiz/baldar/app/Droplet-Hi-C/02.analysis/scripts/basics.R")
 
+
 tori <- c("#477a96", "#c3533d", "#85212b", "#bcc9d1", "#6a9d84")
 colfunc2 <- colorRampPalette(c(tori))
 

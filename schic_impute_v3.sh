@@ -8,7 +8,6 @@ in_dir=${current}/hicluster
 raw_matrix=${in_dir}/raw_matrix
 cell_matrix=${in_dir}/cell_matrix
 imputed_matrix=${in_dir}/imputed_matrix
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 genome="mm10"
 threads=24
@@ -36,12 +35,12 @@ mkdir -p ${map_dir} ${cell_matrix} ${raw_matrix} ${imputed_matrix}
 
 if [[ "${genome}" == "mm10" ]]
 then
-    chrom_size=$SCRIPT_DIR"/01.pre-process/supp/mm10.chrom.sizes"
-    bl=$SCRIPT_DIR"/01.pre-process/supp/mm10-blacklist.v2.bed"
+    chrom_size="/home/quanyiz/genome/mm10/mm10_noYM.chrom.sizes"
+    bl="/home/quanyiz/genome/mm10/mm10-blacklist.v2.bed"
 elif [[ "${genome}" == "hg38" ]]
 then
-    chrom_size=$SCRIPT_DIR"/01.pre-process/supp/hg38.chrom.sizes"
-    bl=$SCRIPT_DIR"/01.pre-process/supp/hg38-blacklist.v2.bed" 
+    chrom_size="/home/quanyiz/genome/hg38/hg38_noYM.chrom.sizes"
+    bl="/home/quanyiz/genome/hg38/hg38-blacklist.v2.bed" 
 fi
 
 cd ${current}

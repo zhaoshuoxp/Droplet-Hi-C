@@ -45,13 +45,13 @@ mkdir -p ${map_dir}
 mkdir -p ${mtx_dir}
 
 echo "process scHiC fastq... mode: "${mode}
-hictools combine_hic ${mode} ${fastq_dir}/${s}
+./hictools combine_hic ${mode} ${fastq_dir}/${s}
 # there is no --reorder in bowtie1, use single-thread, NO -p param!
 (zcat ${fastq_dir}/${s}_R1_combined.fq.gz | bowtie ${ref_10X} - --nofw -m 1 -v 1 -S ${fastq_dir}/${s}_R1_BC.sam) 2>${fastq_dir}/${s}_R1.log
 (zcat ${fastq_dir}/${s}_R3_combined.fq.gz | bowtie ${ref_10X} - --nofw -m 1 -v 1 -S ${fastq_dir}/${s}_R3_BC.sam) 2>${fastq_dir}/${s}_R3.log
 
-hictools convert_hic2 ${fastq_dir}/${s}_R1_BC.sam
-hictools convert_hic2 ${fastq_dir}/${s}_R3_BC.sam
+./hictools convert_hic2 ${fastq_dir}/${s}_R1_BC.sam
+./hictools convert_hic2 ${fastq_dir}/${s}_R3_BC.sam
 
 if [[ -f "${fastq_dir}/${s}_R1_BC_cov.fq.gz" && -f "${fastq_dir}/${s}_R3_BC_cov.fq.gz" ]]
 then
@@ -102,5 +102,5 @@ bs=5000
 cooler cload pairix ${chrsize}:${bs} ${map_dir}/${s}_${genome}.sc.pairs.gz ${mtx_dir}/${s}_${genome}_${bs}.cool
 
 ### Balancing
-cooler zoomify --balance -p $threads -o ${mtx_dir}/${s}_${genome}.mcool -r 5000,10000,25000,50000,100000,250000,500000,1000000,2500000 ${mtx_dir}/${s}_${genome}_${bs}.cool
+cooler zoomify --balance --balance-args '–nproc 8' -p $threads -o ${mtx_dir}/${s}_${genome}.mcool -r 5000,10000,25000,50000,100000,250000,500000,1000000,2500000 ${mtx_dir}/${s}_${genome}_${bs}.cool
 
