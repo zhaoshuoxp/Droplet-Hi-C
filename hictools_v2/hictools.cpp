@@ -1,284 +1,328 @@
 //
 // hictools.cpp
-// Optimized, Robust, and Auto-detect Version
+// Ultimate Performance Version (kseq.h + string_view + OpenMP + pigz)
 //
 
-#include <stdio.h>
 #include <iostream>
 #include <fstream>
-#include <sstream>
 #include <string>
 #include <vector>
-#include <map>
-#include "cxstring.hpp" 
+#include <string_view>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <unistd.h>
+#include <omp.h>
+
+// 引入 kseq 库，直接绑定 POSIX read 函数（因为 pigz 已经帮我们解压了，绕过 zlib 开销）
+#include "kseq.h"
+KSEQ_INIT(int, read)
 
 using namespace std;
 
-class combine_hic{
-private:
-    static string clean_readname(const string& raw_name) {
-        size_t space_pos = raw_name.find_first_of(" \t");
-        string base = (space_pos != string::npos) ? raw_name.substr(0, space_pos) : raw_name;
-        
-        size_t colon_r_pos = base.rfind(":r");
-        if (colon_r_pos != string::npos && colon_r_pos > 0) {
-            bool is_barcode = true;
-            for (size_t i = colon_r_pos + 2; i < base.length(); ++i) {
-                char c = base[i];
-                if (c != 'A' && c != 'C' && c != 'G' && c != 'T' && c != 'N') {
-                    is_barcode = false; 
-                    break;
-                }
-            }
-            if (is_barcode) {
-                base = base.substr(0, colon_r_pos);
+// ==========================================
+// 工具函数：检查文件是否存在
+// ==========================================
+bool file_exists(const string& name) {
+    if (FILE *file = fopen(name.c_str(), "r")) {
+        fclose(file);
+        return true;
+    }
+    return false;
+}
+
+// ==========================================
+// 工具函数：获取读写管道 (智能回退机制)
+// ==========================================
+FILE* get_reader(const string& path, const string& threads) {
+    string cmd = "pigz -p " + threads + " -dc " + path + " 2>/dev/null || zcat " + path;
+    FILE* fp = popen(cmd.c_str(), "r");
+    if (!fp) { cerr << "Error opening reader for " << path << endl; exit(1); }
+    return fp;
+}
+
+FILE* get_writer(const string& path, const string& threads) {
+    string cmd = "pigz -p " + threads + " -c > " + path + " 2>/dev/null || gzip -c > " + path;
+    FILE* fp = popen(cmd.c_str(), "w");
+    if (!fp) { cerr << "Error opening writer for " << path << endl; exit(1); }
+    return fp;
+}
+
+// ==========================================
+// 核心逻辑：智能清洗 Readname (零拷贝)
+// ==========================================
+string_view clean_readname(string_view raw_name) {
+    auto space_pos = raw_name.find_first_of(" \t");
+    string_view base = (space_pos != string_view::npos) ? raw_name.substr(0, space_pos) : raw_name;
+    
+    auto colon_r_pos = base.rfind(":r");
+    if (colon_r_pos != string_view::npos && colon_r_pos > 0) {
+        string_view suffix = base.substr(colon_r_pos + 2);
+        bool is_barcode = true;
+        for (char c : suffix) {
+            if (c != 'A' && c != 'C' && c != 'G' && c != 'T' && c != 'N') {
+                is_barcode = false; 
+                break;
             }
         }
-        return base;
-    }
-
-    static bool file_exists(const string& name) {
-        if (FILE *file = fopen(name.c_str(), "r")) {
-            fclose(file);
-            return true;
+        if (is_barcode) {
+            return base.substr(0, colon_r_pos);
         }
-        return false;
     }
+    return base;
+}
 
-public:
-    static void run(string mode, string r2);
-};
-
-class convert_hic2{
-private:
-
-public:
-    static void run(string prefix);
-};
-
-void combine_hic::run(string mode, string r2){
-    long long total = 0;
-    long long pass = 0;
-    string cmd;
+// ==========================================
+// 模块：combine_hic
+// ==========================================
+void run_combine_hic(const string& mode, const string& r2_prefix, const string& threads) {
     string file_r1, file_r2, file_r3;
+    const char* exts[] = {".fq.gz", ".fastq.gz"};
+    
+    for (const char* ext : exts) {
+        if (file_exists(r2_prefix + "_R1" + ext)) file_r1 = r2_prefix + "_R1" + ext;
+        if (file_exists(r2_prefix + "_R2" + ext)) file_r2 = r2_prefix + "_R2" + ext;
+        if (file_exists(r2_prefix + "_R3" + ext)) file_r3 = r2_prefix + "_R3" + ext;
+    }
 
-    if (file_exists(r2 + "_R1.fq.gz")) file_r1 = r2 + "_R1.fq.gz";
-    else if (file_exists(r2 + "_R1.fastq.gz")) file_r1 = r2 + "_R1.fastq.gz";
-    else { cerr << "Error: Cannot find R1 file (.fq.gz or .fastq.gz) for " << r2 << endl; exit(1); }
+    if (file_r1.empty() || file_r2.empty() || file_r3.empty()) {
+        cerr << "Error: Cannot find matching _R1, _R2, or _R3 (.fq.gz/.fastq.gz) for prefix " << r2_prefix << endl;
+        exit(1);
+    }
 
-    if (file_exists(r2 + "_R2.fq.gz")) file_r2 = r2 + "_R2.fq.gz";
-    else if (file_exists(r2 + "_R2.fastq.gz")) file_r2 = r2 + "_R2.fastq.gz";
-    else { cerr << "Error: Cannot find R2 file (.fq.gz or .fastq.gz) for " << r2 << endl; exit(1); }
+    FILE* red1 = get_reader(file_r1, threads);
+    FILE* red2 = get_reader(file_r2, threads);
+    FILE* red3 = get_reader(file_r3, threads);
 
-    if (file_exists(r2 + "_R3.fq.gz")) file_r3 = r2 + "_R3.fq.gz";
-    else if (file_exists(r2 + "_R3.fastq.gz")) file_r3 = r2 + "_R3.fastq.gz";
-    else { cerr << "Error: Cannot find R3 file (.fq.gz or .fastq.gz) for " << r2 << endl; exit(1); }
+    FILE* out1 = get_writer(r2_prefix + "_R1_combined.fq.gz", threads);
+    FILE* out2 = get_writer(r2_prefix + "_R3_combined.fq.gz", threads);
 
-    cmd = "zcat " + file_r1;
-    FILE * red1 = popen(cmd.c_str(), "r");
-    if(!red1) { cerr << "Error opening R1: " << cmd << endl; exit(1); }
+    // 初始化 kseq
+    kseq_t *seq1 = kseq_init(fileno(red1));
+    kseq_t *seq2 = kseq_init(fileno(red2));
+    kseq_t *seq3 = kseq_init(fileno(red3));
 
-    cmd = "gzip - > " + r2 + "_R1_combined.fq.gz";
-    FILE * outfile1 = popen(cmd.c_str(), "w");
+    unsigned long long total = 0, pass = 0;
+    
+    // 增加输出缓冲区，大幅降低 fwrite 调用次数
+    string out1_buf, out2_buf;
+    out1_buf.reserve(4 * 1024 * 1024); // 4MB buffer
+    out2_buf.reserve(4 * 1024 * 1024);
 
-    cmd = "zcat " + file_r2;
-    FILE * red2 = popen(cmd.c_str(), "r");
-    if(!red2) { cerr << "Error opening R2: " << cmd << endl; exit(1); }
-
-    cmd = "zcat " + file_r3;
-    FILE * red3 = popen(cmd.c_str(), "r");
-    if(!red3) { cerr << "Error opening R3: " << cmd << endl; exit(1); }
-
-    cmd = "gzip - > " + r2 + "_R3_combined.fq.gz";
-    FILE * outfile2 = popen(cmd.c_str(), "w");
-
-    char buffer[4096];
-    fqline in_line1;
-    fqline in_line2;
-    fqline in_line3;
-    string line1_raw;
-    string readname_base;
-
-    while(fgets(buffer, sizeof(buffer), red1)){
-        ++total;
+    while (kseq_read(seq1) >= 0 && kseq_read(seq2) >= 0 && kseq_read(seq3) >= 0) {
+        total++;
         
-        line1_raw = buffer; 
-        if(!line1_raw.empty() && line1_raw.back() == '\n') line1_raw.pop_back();
-        if(!line1_raw.empty() && line1_raw.back() == '\r') line1_raw.pop_back();
+        string_view n1(seq1->name.s, seq1->name.l);
+        string_view n2(seq2->name.s, seq2->name.l);
         
-        in_line1.read_part_record(red1, line1_raw);
-        in_line2.read_full_record(red2);
-        in_line3.read_full_record(red3);
+        string_view s1(seq1->seq.s, seq1->seq.l);
+        string_view q1(seq1->qual.s, seq1->qual.l);
+        string_view s2(seq2->seq.s, seq2->seq.l);
+        string_view q2(seq2->qual.s, seq2->qual.l);
+        string_view s3(seq3->seq.s, seq3->seq.l);
+        string_view q3(seq3->qual.s, seq3->qual.l);
 
-        if(mode == "atac"){
-            if(in_line2.seq.length() > 16) in_line2.seq.resize(16);
-            if(in_line2.qual.length() > 16) in_line2.qual.resize(16);
+        if (mode == "atac") {
+            string_view seq = s2.length() > 16 ? s2.substr(0, 16) : s2;
+            string_view qual = q2.length() > 16 ? q2.substr(0, 16) : q2;
+            string_view base_name = clean_readname(n2);
+
+            out1_buf.append("@").append(base_name).append(":").append(s1).append(":").append(q1)
+                    .append("\n").append(seq).append("\n+\n").append(qual).append("\n");
             
-            readname_base = clean_readname(in_line2.readname);
+            out2_buf.append("@").append(base_name).append(":").append(s3).append(":").append(q3)
+                    .append("\n").append(seq).append("\n+\n").append(qual).append("\n");
+            pass++;
+        } 
+        else if (mode == "arc") {
+            if (s2.length() < 24) continue;
+            string_view seq = s2.substr(8, 16);
+            string_view qual = q2.substr(8, 16);
+            string_view base_name = clean_readname(n2);
 
-            in_line2.readname = readname_base + ":" + in_line1.seq + ":" + in_line1.qual;
-            in_line2.write_record(outfile1); 
+            out1_buf.append("@").append(base_name).append(":").append(s1).append(":").append(q1)
+                    .append("\n").append(seq).append("\n+\n").append(qual).append("\n");
             
-            in_line2.readname = readname_base + ":" + in_line3.seq + ":" + in_line3.qual;
-            in_line2.write_record(outfile2);
-            ++pass;
+            out2_buf.append("@").append(base_name).append(":").append(s3).append(":").append(q3)
+                    .append("\n").append(seq).append("\n+\n").append(qual).append("\n");
+            pass++;
+        } 
+        else if (mode == "rna") {
+            if (s1.length() < 28) continue;
+            string_view barcode = s1.substr(0, 16);
+            string_view umi = s1.substr(16, 12);
+            string_view qual = q1.substr(0, 16);
+            string_view base_name = clean_readname(n1);
 
-        } else if(mode == "arc"){
-            if(in_line2.seq.length() < 24) continue;
+            out2_buf.append("@").append(base_name).append(":").append(umi).append(":").append(s3).append(":").append(q3)
+                    .append("\n").append(barcode).append("\n+\n").append(qual).append("\n");
+            pass++;
+        }
 
-            in_line2.seq = in_line2.seq.substr(8, 16);
-            in_line2.qual = in_line2.qual.substr(8, 16);
-
-            readname_base = clean_readname(in_line2.readname);
-
-            in_line2.readname = readname_base + ":" + in_line1.seq + ":" + in_line1.qual;
-            in_line2.write_record(outfile1);
-            
-            in_line2.readname = readname_base + ":" + in_line3.seq + ":" + in_line3.qual;
-            in_line2.write_record(outfile2);
-            ++pass;
-
-        } else if(mode == "rna"){
-            if(in_line1.seq.length() < 28) continue;
-
-            string barcode = in_line1.seq.substr(0, 16);
-            string umi = in_line1.seq.substr(16, 12);
-            
-            in_line1.seq = barcode;
-            in_line1.qual = in_line1.qual.substr(0, 16);
-
-            readname_base = clean_readname(in_line1.readname);
-
-            in_line1.readname = readname_base + ":" + umi + ":" + in_line3.seq + ":" + in_line3.qual;
-            in_line1.write_record(outfile2);
-            ++pass;
+        // 定期将 Buffer 刷入硬盘/管道
+        if (out1_buf.size() >= 2 * 1024 * 1024) {
+            fwrite(out1_buf.data(), 1, out1_buf.size(), out1);
+            out1_buf.clear();
+        }
+        if (out2_buf.size() >= 2 * 1024 * 1024) {
+            fwrite(out2_buf.data(), 1, out2_buf.size(), out2);
+            out2_buf.clear();
         }
     }
 
-    pclose(red1);
-    pclose(red2);
-    pclose(red3);
-    pclose(outfile1);
-    pclose(outfile2);
+    // 刷入剩余内容
+    if (!out1_buf.empty()) fwrite(out1_buf.data(), 1, out1_buf.size(), out1);
+    if (!out2_buf.empty()) fwrite(out2_buf.data(), 1, out2_buf.size(), out2);
 
-    double ratio = 0.0;
-    if (total > 0) {
-        ratio = ((double)pass / total) * 100.0;
-    }
+    kseq_destroy(seq1); pclose(red1);
+    kseq_destroy(seq2); pclose(red2);
+    kseq_destroy(seq3); pclose(red3);
+    pclose(out1); pclose(out2);
 
-    cout << "==================================================\n(10X) Barcode Locator Report: " << r2 << endl;
+    double ratio = (total > 0) ? ((double)pass / total) * 100.0 : 0.0;
+    cout << "==================================================\n(10X) Barcode Locator Report: " << r2_prefix << endl;
     cout << "barcodes modes:\t\t" << mode << endl;
-    cout << "# total raw reads:\t\t" << total << endl << "# of full barcoded reads:\t" << pass << endl;
-    cout << "% of full length barcode reads:\t" << ratio << "%\n==================================================" << endl << endl;
-    return;
+    cout << "# total raw reads:\t\t" << total << "\n# of full barcoded reads:\t" << pass << endl;
+    cout << "% of full length barcode reads:\t" << ratio << "%\n==================================================\n\n";
 }
 
-void convert_hic2::run(string prefix){
-    long long total = 0;
-    long long pass = 0;
-    string cmd = "cat " + prefix; 
-    FILE * inbam = popen(cmd.c_str(), "r");
-    if(!inbam){ cerr << "Error opening SAM: " << cmd << endl; exit(1); }
+// ==========================================
+// 模块：convert_hic2 (采用 OpenMP 批处理并行)
+// ==========================================
+void run_convert_hic2(const string& prefix, const string& threads) {
+    FILE* inbam = fopen(prefix.c_str(), "r");
+    if (!inbam) { cerr << "Error opening SAM: " << prefix << endl; exit(1); }
 
-    string out_name = prefix.substr(0, prefix.length()-4) + "_cov.fq.gz";
-    cmd = "gzip - > " + out_name;
-    FILE * fout = popen(cmd.c_str(), "w");
+    string out_name = (prefix.length() > 4 && prefix.substr(prefix.length() - 4) == ".sam") 
+                      ? prefix.substr(0, prefix.length() - 4) + "_cov.fq.gz" 
+                      : prefix + "_cov.fq.gz";
+                      
+    FILE* fout = get_writer(out_name, threads);
 
-    samline align_line;
-    fqline fastq_line;
-    char buffer[4096];
+    const int BATCH_SIZE = 100000; // 一次读取 10 万行，放入多线程池
+    vector<string> lines(BATCH_SIZE);
+    vector<string> out_lines(BATCH_SIZE);
     
-    while(fgets(buffer, sizeof(buffer), inbam)){
-        if(buffer[0] == '@') continue;
-        
-        string line_str(buffer); 
-        ++total;
-        align_line.init(line_str);
-        
-        if(align_line.chr == "*") continue;
+    char buffer[4096];
+    unsigned long long total = 0, pass = 0;
+    int current_batch_size = 0;
 
-        vector<string> tmp = cxstring::split(align_line.readname, ":");
-        if (tmp.size() < 3) continue; 
+    auto process_batch = [&]() {
+        #pragma omp parallel for
+        for (int i = 0; i < current_batch_size; ++i) {
+            out_lines[i].clear();
+            string_view line = lines[i];
+            
+            if (line.empty() || line[0] == '@') continue;
+            
+            // 手动快速切分 tab (提取前 3 列)
+            size_t t1 = line.find('\t'); if (t1 == string_view::npos) continue;
+            size_t t2 = line.find('\t', t1 + 1); if (t2 == string_view::npos) continue;
+            size_t t3 = line.find('\t', t2 + 1); if (t3 == string_view::npos) continue;
 
-        int seq_idx = -1;
-        for (size_t i = 1; i < tmp.size(); ++i) {
-            if (tmp[i].length() > 20) {
-                bool is_dna = true;
-                for (char c : tmp[i]) {
-                    if (c != 'A' && c != 'C' && c != 'G' && c != 'T' && c != 'N') {
-                        is_dna = false; break;
+            string_view qname = line.substr(0, t1);
+            string_view chr = line.substr(t2 + 1, t3 - t2 - 1);
+            if (chr == "*") continue;
+
+            // 切分冒号
+            vector<string_view> tmp;
+            size_t start = 0, end;
+            while ((end = qname.find(':', start)) != string_view::npos) {
+                tmp.push_back(qname.substr(start, end - start));
+                start = end + 1;
+            }
+            tmp.push_back(qname.substr(start));
+
+            if (tmp.size() < 3) continue;
+
+            int seq_idx = -1;
+            for (size_t j = 1; j < tmp.size(); ++j) {
+                if (tmp[j].length() > 20) {
+                    bool is_dna = true;
+                    for (char c : tmp[j]) {
+                        if (c != 'A' && c != 'C' && c != 'G' && c != 'T' && c != 'N') { is_dna = false; break; }
                     }
-                }
-                if (is_dna) {
-                    seq_idx = i;
-                    break;
+                    if (is_dna) { seq_idx = j; break; }
                 }
             }
+
+            if (seq_idx == -1) {
+                if (tmp.size() > 7) seq_idx = 7;
+                else continue;
+            }
+
+            string_view seq = tmp[seq_idx];
+            size_t seq_len = seq.length();
+            size_t expected_min_len = 2 * seq_len + 2;
+
+            string final_name, final_qual;
+            if (qname.length() >= expected_min_len) {
+                final_qual = string(qname.substr(qname.length() - seq_len));
+                string_view base_name = qname.substr(0, qname.length() - expected_min_len);
+                final_name = "@" + string(chr) + ":" + string(base_name);
+            } else {
+                final_qual = string(seq);
+                final_name = "@" + string(chr) + ":" + string(tmp[0]);
+            }
+
+            out_lines[i] = final_name + "\n" + string(seq) + "\n+\n" + final_qual + "\n";
         }
 
-        if (seq_idx == -1) {
-            if (tmp.size() > 7) seq_idx = 7;
-            else continue; 
+        // 统一写入并统计
+        string batch_out;
+        batch_out.reserve(BATCH_SIZE * 200);
+        for (int i = 0; i < current_batch_size; ++i) {
+            if (!out_lines[i].empty()) {
+                batch_out += out_lines[i];
+                pass++;
+            }
         }
+        if (!batch_out.empty()) fwrite(batch_out.data(), 1, batch_out.size(), fout);
+    };
 
-        fastq_line.seq = tmp[seq_idx];
-        size_t seq_len = fastq_line.seq.length();
+    while (fgets(buffer, sizeof(buffer), inbam)) {
+        size_t len = strlen(buffer);
+        if (len > 0 && buffer[len-1] == '\n') buffer[len-1] = '\0';
+        if (len > 1 && buffer[len-2] == '\r') buffer[len-2] = '\0';
         
-        size_t expected_min_len = 2 * seq_len + 2; 
-        if (align_line.readname.length() >= expected_min_len) {
-            fastq_line.qual = align_line.readname.substr(align_line.readname.length() - seq_len);
-            string base_name = align_line.readname.substr(0, align_line.readname.length() - expected_min_len);
-            fastq_line.readname = "@" + align_line.chr + ":" + base_name;
-        } else {
-            fastq_line.qual = fastq_line.seq; 
-            fastq_line.readname = "@" + align_line.chr + ":" + tmp[0];
+        lines[current_batch_size++] = buffer;
+        if (buffer[0] != '@') total++;
+        
+        if (current_batch_size == BATCH_SIZE) {
+            process_batch();
+            current_batch_size = 0;
         }
-        
-        fastq_line.mark = "+";
-        fastq_line.write_record(fout);
-        ++pass;
     }
-    
-    pclose(inbam);
-    pclose(fout);
-    
-    string base_name = prefix.substr(0, prefix.length()-4);
+    if (current_batch_size > 0) process_batch(); // 处理最后剩余的批次
+
+    fclose(inbam); pclose(fout);
+
+    string base_name = (prefix.length() > 4 && prefix.substr(prefix.length() - 4) == ".sam") ? prefix.substr(0, prefix.length() - 4) : prefix;
     cout << "==================================================\n" << total << " reads processed in " << base_name << endl;
-    cout << pass << " mapped reads in " << base_name << "\n==================================================" << endl;
-    return;
+    cout << pass << " mapped reads in " << base_name << "\n==================================================\n";
 }
 
-int main(int argc, const char * argv[]) {
-    if (argc < 2) {
-        cerr << "Usage: hictools [mode] ..." << endl;
-        return 1;
-    }
+// ==========================================
+// 主入口
+// ==========================================
+int main(int argc, char *argv[]) {
+    if (argc < 2) { cerr << "Usage: hictools [mode] ..." << endl; return 1; }
 
     string mod(argv[1]);
     
-    if(mod == "combine_hic"){
-        if(argc < 4){
-            cerr<<"Usage: hictools combine_hic [atac/arc/rna] [prefix]"<<endl;
-            return 1;
-        }
+    if (mod == "combine_hic") {
+        if (argc < 4) { cerr << "Usage: hictools combine_hic [atac/arc/rna] [prefix] [threads]" << endl; return 1; }
         string mode = argv[2];
-        if((mode != "atac") && (mode != "arc") && (mode != "rna")){
-            cerr << "Invalid mode: " << mode << endl;
-            return 1;
-        }
-        combine_hic::run(mode, argv[3]);
-        return 0;
-    }
-
-    if(mod == "convert_hic2"){
-        if(argc < 3){
-            cerr << "hictools convert_hic2 [sample_BC.sam]." << endl;
-            return 1;
-        }
-        convert_hic2::run(argv[2]);
-        return 0;
+        if (mode != "atac" && mode != "arc" && mode != "rna") { cerr << "Invalid mode: " << mode << endl; return 1; }
+        string threads = (argc > 4) ? argv[4] : "8";
+        run_combine_hic(mode, argv[3], threads);
     } 
+    else if (mod == "convert_hic2") {
+        if (argc < 3) { cerr << "Usage: hictools convert_hic2 [sample_BC.sam] [threads]" << endl; return 1; }
+        string threads = (argc > 3) ? argv[3] : "8";
+        run_convert_hic2(argv[2], threads);
+    } 
+    else { cerr << "Unknown module: " << mod << endl; return 1; }
     
-    cerr << "Unknown module: " << mod << endl;
-    return 1;
+    return 0;
 }
