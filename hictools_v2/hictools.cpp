@@ -1,6 +1,6 @@
 //
 // hictools.cpp
-// Optimized and Robust Version
+// Optimized, Robust, and Auto-detect Version
 //
 
 #include <stdio.h>
@@ -37,8 +37,16 @@ private:
         return base;
     }
 
+    static bool file_exists(const string& name) {
+        if (FILE *file = fopen(name.c_str(), "r")) {
+            fclose(file);
+            return true;
+        }
+        return false;
+    }
+
 public:
-    static void run(string mode, string r2, string ty);
+    static void run(string mode, string r2);
 };
 
 class convert_hic2{
@@ -48,47 +56,40 @@ public:
     static void run(string prefix);
 };
 
-void combine_hic::run(string mode, string r2, string ty){
+void combine_hic::run(string mode, string r2){
     long long total = 0;
     long long pass = 0;
-    string s1, s2, s3;
     string cmd;
+    string file_r1, file_r2, file_r3;
 
-    if(ty == "gz"){
-        s1 = "zcat "; s2 = "_R1.fq.gz";
-    } else if(ty == "bz2"){
-        s1 = "bzcat "; s2 = "_R1.fastq.bz2";
-    }
-    cmd = s1 + r2 + s2;
+    if (file_exists(r2 + "_R1.fq.gz")) file_r1 = r2 + "_R1.fq.gz";
+    else if (file_exists(r2 + "_R1.fastq.gz")) file_r1 = r2 + "_R1.fastq.gz";
+    else { cerr << "Error: Cannot find R1 file (.fq.gz or .fastq.gz) for " << r2 << endl; exit(1); }
+
+    if (file_exists(r2 + "_R2.fq.gz")) file_r2 = r2 + "_R2.fq.gz";
+    else if (file_exists(r2 + "_R2.fastq.gz")) file_r2 = r2 + "_R2.fastq.gz";
+    else { cerr << "Error: Cannot find R2 file (.fq.gz or .fastq.gz) for " << r2 << endl; exit(1); }
+
+    if (file_exists(r2 + "_R3.fq.gz")) file_r3 = r2 + "_R3.fq.gz";
+    else if (file_exists(r2 + "_R3.fastq.gz")) file_r3 = r2 + "_R3.fastq.gz";
+    else { cerr << "Error: Cannot find R3 file (.fq.gz or .fastq.gz) for " << r2 << endl; exit(1); }
+
+    cmd = "zcat " + file_r1;
     FILE * red1 = popen(cmd.c_str(), "r");
     if(!red1) { cerr << "Error opening R1: " << cmd << endl; exit(1); }
 
-    s1 = "gzip - > ";
-    s2 = r2 + "_R1_combined.fq.gz";
-    cmd = s1 + s2;
+    cmd = "gzip - > " + r2 + "_R1_combined.fq.gz";
     FILE * outfile1 = popen(cmd.c_str(), "w");
 
-    if(ty == "gz"){
-        s1 = "zcat "; s2 = "_R2.fq.gz";
-    } else if(ty == "bz2"){
-        s1 = "bzcat "; s2 = "_R2.fastq.bz2";
-    }
-    cmd = s1 + r2 + s2;
+    cmd = "zcat " + file_r2;
     FILE * red2 = popen(cmd.c_str(), "r");
     if(!red2) { cerr << "Error opening R2: " << cmd << endl; exit(1); }
 
-    if(ty == "gz"){
-        s1 = "zcat "; s2 = "_R3.fq.gz";
-    } else if(ty == "bz2"){
-        s1 = "bzcat "; s2 = "_R3.fastq.bz2";
-    }
-    cmd = s1 + r2 + s2;
+    cmd = "zcat " + file_r3;
     FILE * red3 = popen(cmd.c_str(), "r");
     if(!red3) { cerr << "Error opening R3: " << cmd << endl; exit(1); }
 
-    s1 = "gzip - > ";
-    s2 = r2 + "_R3_combined.fq.gz";
-    cmd = s1 + s2;
+    cmd = "gzip - > " + r2 + "_R3_combined.fq.gz";
     FILE * outfile2 = popen(cmd.c_str(), "w");
 
     char buffer[4096];
@@ -256,8 +257,8 @@ int main(int argc, const char * argv[]) {
     string mod(argv[1]);
     
     if(mod == "combine_hic"){
-        if(argc < 3){
-            cerr<<"hictools combine_hic [atac/arc/rna] [prefix] [gz/bz2]"<<endl;
+        if(argc < 4){
+            cerr<<"Usage: hictools combine_hic [atac/arc/rna] [prefix]"<<endl;
             return 1;
         }
         string mode = argv[2];
@@ -265,8 +266,7 @@ int main(int argc, const char * argv[]) {
             cerr << "Invalid mode: " << mode << endl;
             return 1;
         }
-        string type = (argc >= 5) ? argv[4] : "gz";
-        combine_hic::run(mode, argv[3], type);
+        combine_hic::run(mode, argv[3]);
         return 0;
     }
 
