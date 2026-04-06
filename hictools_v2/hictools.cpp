@@ -435,12 +435,10 @@ void run_end_to_end(const string& mode, const string& r2_prefix, const string& w
             else if (mode == "rna") raw_bc = r.seq1.length() >= 16 ? string_view(r.seq1.data(), 16) : "";
 
             if (!raw_bc.empty()) {
-                // 💡 双向嗅探匹配策略
-                // 由于原 Bowtie 脚本使用 --nofw，数据主要是反向互补的，所以优先比对 RC
+
                 uint64_t key_rc = encode_rc_seq(raw_bc);
                 auto it = dict.find(key_rc);
-                
-                // 如果 RC 没匹配上（或发生错配碰撞），则降级尝试正向比对
+
                 if (it == dict.end() || it->second == 0xFFFFFFFF) {
                     uint64_t key_fw = encode_seq(raw_bc);
                     it = dict.find(key_fw);
