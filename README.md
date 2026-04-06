@@ -22,21 +22,51 @@ We provide a patched version of `schicluster that is detached from git-scm versi
 
 https://github.com/zhaoshuoxp/scHiCluster/tree/master
 
-### 2. hictools (Modified)
+> **Note:** We recommend installing these packages in **Editable Mode (`-e`)** inside a fresh conda environment to prevent conflicts with system-level packages.
 
-A patched version of `hictools` is provided to ensure compatibility .
 
-**Installation:**
 
-Bash
+### 2. hictools (C++)
+
+A patched version of `hictools` is provided to ensure compatibility with NovaSeq X and improved performance .
+
+- **Zero-Copy Parsing (C++17):** Replaced all `std::string` allocations (`substr`, `split`, concatenation) with  `std::string_view`.
+
+- **Pipeline to `kseq.h`:** Bypassed the single-threaded `zlib` by piping `pigz` output directly into Heng Li's  `kseq.h` C library.
+
+- **OpenMP Parallelism:**  a batched-processing model using `#pragma omp parallel for`. Now reads chunks of 100,000 SAM lines and distributes workload uniformly across all available logical CPU cores.
+
+- **Double Buffering:** Implemented large, custom memory buffers (up to 4MB) to aggregate output data.
+
+- **Smart Quality of Life:** Added automatic fallback detection for `.fq.gz` vs. `.fastq.gz` extensions and exposed dynamic thread count parameters to the CLI.
+
+**To compile:**
 
 ```
 cd hictools_v2
-g++ -O3 -o hictools hictools.cpp cxstring.cpp
+g++ -O3 -std=c++17 -fopenmp hictools.cpp -o hictools
 ```
 
-> **Note:** We recommend installing these packages in **Editable Mode (`-e`)** inside a fresh conda environment to prevent conflicts with system-level packages.
 
+### 3. hictools (Rust)
+
+The Rust version provides a modernized, memory-safe alternative that delivers near C++ performance without the complexity of manual memory management or external C libraries.
+
+**To compile Rust version hictools**:
+
+1. install Rust:
+```
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+```
+2. compile:
+```
+cd hictools_rs
+cargo build --release
+```
+3. now hictools is in `target/release/hictools`
+
+   
 
 
 ## Abstract

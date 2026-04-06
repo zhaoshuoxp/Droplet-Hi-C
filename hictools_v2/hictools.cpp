@@ -14,15 +14,12 @@
 #include <unistd.h>
 #include <omp.h>
 
-// 引入 kseq 库，直接绑定 POSIX read 函数（因为 pigz 已经帮我们解压了，绕过 zlib 开销）
+
 #include "kseq.h"
 KSEQ_INIT(int, read)
 
 using namespace std;
 
-// ==========================================
-// 工具函数：检查文件是否存在
-// ==========================================
 bool file_exists(const string& name) {
     if (FILE *file = fopen(name.c_str(), "r")) {
         fclose(file);
@@ -31,9 +28,7 @@ bool file_exists(const string& name) {
     return false;
 }
 
-// ==========================================
-// 工具函数：获取读写管道 (智能回退机制)
-// ==========================================
+
 FILE* get_reader(const string& path, const string& threads) {
     string cmd = "pigz -p " + threads + " -dc " + path + " 2>/dev/null || zcat " + path;
     FILE* fp = popen(cmd.c_str(), "r");
@@ -48,9 +43,6 @@ FILE* get_writer(const string& path, const string& threads) {
     return fp;
 }
 
-// ==========================================
-// 核心逻辑：智能清洗 Readname (零拷贝)
-// ==========================================
 string_view clean_readname(string_view raw_name) {
     auto space_pos = raw_name.find_first_of(" \t");
     string_view base = (space_pos != string_view::npos) ? raw_name.substr(0, space_pos) : raw_name;
@@ -72,9 +64,6 @@ string_view clean_readname(string_view raw_name) {
     return base;
 }
 
-// ==========================================
-// 模块：combine_hic
-// ==========================================
 void run_combine_hic(const string& mode, const string& r2_prefix, const string& threads) {
     string file_r1, file_r2, file_r3;
     const char* exts[] = {".fq.gz", ".fastq.gz"};
@@ -97,14 +86,12 @@ void run_combine_hic(const string& mode, const string& r2_prefix, const string& 
     FILE* out1 = get_writer(r2_prefix + "_R1_combined.fq.gz", threads);
     FILE* out2 = get_writer(r2_prefix + "_R3_combined.fq.gz", threads);
 
-    // 初始化 kseq
     kseq_t *seq1 = kseq_init(fileno(red1));
     kseq_t *seq2 = kseq_init(fileno(red2));
     kseq_t *seq3 = kseq_init(fileno(red3));
 
     unsigned long long total = 0, pass = 0;
     
-    // 增加输出缓冲区，大幅降低 fwrite 调用次数
     string out1_buf, out2_buf;
     out1_buf.reserve(4 * 1024 * 1024); // 4MB buffer
     out2_buf.reserve(4 * 1024 * 1024);
@@ -159,7 +146,6 @@ void run_combine_hic(const string& mode, const string& r2_prefix, const string& 
             pass++;
         }
 
-        // 定期将 Buffer 刷入硬盘/管道
         if (out1_buf.size() >= 2 * 1024 * 1024) {
             fwrite(out1_buf.data(), 1, out1_buf.size(), out1);
             out1_buf.clear();
@@ -170,7 +156,6 @@ void run_combine_hic(const string& mode, const string& r2_prefix, const string& 
         }
     }
 
-    // 刷入剩余内容
     if (!out1_buf.empty()) fwrite(out1_buf.data(), 1, out1_buf.size(), out1);
     if (!out2_buf.empty()) fwrite(out2_buf.data(), 1, out2_buf.size(), out2);
 
@@ -186,10 +171,12 @@ void run_combine_hic(const string& mode, const string& r2_prefix, const string& 
     cout << "% of full length barcode reads:\t" << ratio << "%\n==================================================\n\n";
 }
 
-// ==========================================
-// 模块：convert_hic2 (采用 OpenMP 批处理并行)
-// ==========================================
+
 void run_convert_hic2(const string& prefix, const string& threads) {
+
+    int num_threads = std::stoi(threads);
+    omp_set_num_threads(num_threads);
+
     FILE* inbam = fopen(prefix.c_str(), "r");
     if (!inbam) { cerr << "Error opening SAM: " << prefix << endl; exit(1); }
 
@@ -199,7 +186,7 @@ void run_convert_hic2(const string& prefix, const string& threads) {
                       
     FILE* fout = get_writer(out_name, threads);
 
-    const int BATCH_SIZE = 100000; // 一次读取 10 万行，放入多线程池
+    const int BATCH_SIZE = 100000; 
     vector<string> lines(BATCH_SIZE);
     vector<string> out_lines(BATCH_SIZE);
     
@@ -215,7 +202,6 @@ void run_convert_hic2(const string& prefix, const string& threads) {
             
             if (line.empty() || line[0] == '@') continue;
             
-            // 手动快速切分 tab (提取前 3 列)
             size_t t1 = line.find('\t'); if (t1 == string_view::npos) continue;
             size_t t2 = line.find('\t', t1 + 1); if (t2 == string_view::npos) continue;
             size_t t3 = line.find('\t', t2 + 1); if (t3 == string_view::npos) continue;
@@ -224,7 +210,6 @@ void run_convert_hic2(const string& prefix, const string& threads) {
             string_view chr = line.substr(t2 + 1, t3 - t2 - 1);
             if (chr == "*") continue;
 
-            // 切分冒号
             vector<string_view> tmp;
             size_t start = 0, end;
             while ((end = qname.find(':', start)) != string_view::npos) {
@@ -268,7 +253,6 @@ void run_convert_hic2(const string& prefix, const string& threads) {
             out_lines[i] = final_name + "\n" + string(seq) + "\n+\n" + final_qual + "\n";
         }
 
-        // 统一写入并统计
         string batch_out;
         batch_out.reserve(BATCH_SIZE * 200);
         for (int i = 0; i < current_batch_size; ++i) {
@@ -293,7 +277,7 @@ void run_convert_hic2(const string& prefix, const string& threads) {
             current_batch_size = 0;
         }
     }
-    if (current_batch_size > 0) process_batch(); // 处理最后剩余的批次
+    if (current_batch_size > 0) process_batch(); 
 
     fclose(inbam); pclose(fout);
 
@@ -302,9 +286,6 @@ void run_convert_hic2(const string& prefix, const string& threads) {
     cout << pass << " mapped reads in " << base_name << "\n==================================================\n";
 }
 
-// ==========================================
-// 主入口
-// ==========================================
 int main(int argc, char *argv[]) {
     if (argc < 2) { cerr << "Usage: hictools [mode] ..." << endl; return 1; }
 

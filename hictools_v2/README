@@ -1,2 +1,12 @@
-To compile:
-g++ -O3 -o hictools hictools.cpp cxstring.cpp
+To compile Cpp verison hictools:
+g++ -O3 -std=c++17 -fopenmp hictools.cpp -o hictools
+
+To compile Rust version hictools:
+1. install Rust:
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+2. compile:
+cd hictools_rs
+cargo build --release
+3. now hictools is in target/release/hictools
+
