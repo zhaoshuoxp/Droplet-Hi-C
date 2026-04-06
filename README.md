@@ -1,9 +1,61 @@
-# Droplet Hi-C
-Droplet Hi-C is a cheap, convenient and scalable method for chromatin architecture profiling in single cells, based on the widely available 10X Chromium Single Cell ATAC platform.
+# scHi-C Analysis Pipeline
 
-🍹 This repository contains scripts and notebook to reproduce the results for our [manuscript](https://www.nature.com/articles/s41587-024-02447-1): **Droplet Hi-C enables scalable, single-cell profiling of chromatin architecture in heterogeneous tissues**
+A streamlined Bash wrapper script to orchestrate the single-cell Hi-C (scHi-C) data processing pipeline. This script allows you to run the entire workflow end-to-end or selectively execute specific analysis steps. 
 
+Modified from https://github.com/Xieeeee/Droplet-Hi-C
 
+## Dependencies
+
+Ensure the following tools are installed and available in your `$PATH`: `hictools`, `trim_galore`, `bwa`, `samtools`, `pairtools`, `bgzip`, `pairix`, `cooler`, `hicluster`, `hic-internal`.
+
+## Usage
+
+Bash
+
+```
+./run_pipeline.sh [-s sample] [-g genome] [-m mode] [-t threads] [-r resolutions] [-p steps] [-h]
+```
+
+### Options
+
+- **`-s`** : Sample name *(Required)*
+- **`-g`** : Reference genome (e.g., `mm10`, `hg38`) *(Required)*
+- **`-m`** : Assay mode (e.g., `atac`, `arc`)
+- **`-t`** : Number of threads to use *(Default: `24`)*
+- **`-r`** : Resolution list, comma-separated *(Default: `10,50,100`)*
+- **`-p`** : Pipeline steps to run, comma-separated *(Default: `all`)*
+- **`-h`** : Show the help menu and exit
+
+## Pipeline Steps (`-p`)
+
+Use the corresponding numbers with the `-p` flag to run specific steps:
+
+1. **`preproc_paired_hic`** - Raw data preprocessing
+2. **`cell_filtering`** - Quality control and cell filtering
+3. **`schic_impute`** - Data imputation
+4. **`schic_gene_score`** - Gene score calculation
+5. **`schic_domain`** - Domain calling
+6. **`schic_loops`** - Loop calling
+
+## Examples
+
+**Run the complete pipeline:**
+
+```
+./run_pipeline.sh -s MySample -g hg38 -m atac -t 32 -r 10,50
+```
+
+**Run specific steps only (e.g., just Cell Filtering and Imputation):**
+
+```
+./run_pipeline.sh -s MySample -g hg38 -m atac -p 2,3
+```
+
+**View help:**
+
+```
+./run_pipeline.sh -h
+```
 
 ## Modified Libraries & Environment
 
@@ -24,21 +76,19 @@ https://github.com/zhaoshuoxp/scHiCluster/tree/master
 
 > **Note:** We recommend installing these packages in **Editable Mode (`-e`)** inside a fresh conda environment to prevent conflicts with system-level packages.
 
+### 2. hictools 
 
-
-### 2. hictools (C++)
-
-A patched version of `hictools` is provided to ensure compatibility with NovaSeq X and improved performance .
+A patched version of `hictools` is provided to ensure compatibility with NovaSeq X and improved performance.
 
 - **Zero-Copy Parsing (C++17):** Replaced all `std::string` allocations (`substr`, `split`, concatenation) with  `std::string_view`.
-
 - **Pipeline to `kseq.h`:** Bypassed the single-threaded `zlib` by piping `pigz` output directly into Heng Li's  `kseq.h` C library.
-
 - **OpenMP Parallelism:**  a batched-processing model using `#pragma omp parallel for`. Now reads chunks of 100,000 SAM lines and distributes workload uniformly across all available logical CPU cores.
-
-- **Double Buffering:** Implemented large, custom memory buffers (up to 4MB) to aggregate output data.
-
-- **Smart Quality of Life:** Added automatic fallback detection for `.fq.gz` vs. `.fastq.gz` extensions and exposed dynamic thread count parameters to the CLI.
+- **Double Buffering & Aggregated I/O:** ses large 4MB custom memory buffers to aggregate processed data before flushing to disk, minimizing expensive system-level write calls.
+- **One-Pass "End-to-End" Processing:** A new `end_to_end` module that integrates Barcode extraction, correction, and sequence reconstruction into a single execution step. This eliminates the need for massive intermediate files (`combined.fq.gz` and `.sam`), saving hundreds of GBs in disk I/O.
+  - **In-Memory Hash Mapping (Bowtie-Free):** Implements a high-speed Bit-Encoded Hash Dictionary for 10X Barcodes.
+  - **1-Mismatch Correction:** Automatically generates a 48-million-entry lookup table for all possible single-nucleotide variants. (equivalent to Bowtie `-m 1`) to ensure cellular identity integrity.
+  - **Legacy Support:** Full backward compatibility is maintained for the original `combine_hic` and `convert_hic2` workflows.
+  - 
 
 **To compile:**
 
@@ -48,25 +98,12 @@ g++ -O3 -std=c++17 -fopenmp hictools.cpp -o hictools
 ```
 
 
-### 3. hictools (Rust)
 
-The Rust version provides a modernized, memory-safe alternative that delivers near C++ performance without the complexity of manual memory management or external C libraries.
+# Droplet Hi-C
 
-**To compile Rust version hictools**:
+Droplet Hi-C is a cheap, convenient and scalable method for chromatin architecture profiling in single cells, based on the widely available 10X Chromium Single Cell ATAC platform.
 
-1. install Rust:
-```
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source $HOME/.cargo/env
-```
-2. compile:
-```
-cd hictools_rs
-cargo build --release
-```
-3. now hictools is in `target/release/hictools`
-
-   
+🍹 This repository contains scripts and notebook to reproduce the results for our [manuscript](https://www.nature.com/articles/s41587-024-02447-1): **Droplet Hi-C enables scalable, single-cell profiling of chromatin architecture in heterogeneous tissues**
 
 
 ## Abstract

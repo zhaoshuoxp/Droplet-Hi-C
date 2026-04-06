@@ -45,13 +45,17 @@ mkdir -p ${map_dir}
 mkdir -p ${mtx_dir}
 
 echo "process scHiC fastq... mode: "${mode}
-hictools combine_hic ${mode} ${fastq_dir}/${s}
+### OLD hictools ###
+#hictools combine_hic ${mode} ${fastq_dir}/${s} $threads
 # there is no --reorder in bowtie1, use single-thread, NO -p param!
-(zcat ${fastq_dir}/${s}_R1_combined.fq.gz | bowtie ${ref_10X} - --nofw -m 1 -v 1 -S ${fastq_dir}/${s}_R1_BC.sam) 2>${fastq_dir}/${s}_R1.log
-(zcat ${fastq_dir}/${s}_R3_combined.fq.gz | bowtie ${ref_10X} - --nofw -m 1 -v 1 -S ${fastq_dir}/${s}_R3_BC.sam) 2>${fastq_dir}/${s}_R3.log
+#(pigz -dc ${fastq_dir}/${s}_R1_combined.fq.gz | bowtie ${ref_10X} - --nofw -m 1 -v 1 -S ${fastq_dir}/${s}_R1_BC.sam) 2>${fastq_dir}/${s}_R1.log
+#(pigz -dc ${fastq_dir}/${s}_R3_combined.fq.gz | bowtie ${ref_10X} - --nofw -m 1 -v 1 -S ${fastq_dir}/${s}_R3_BC.sam) 2>${fastq_dir}/${s}_R3.log
 
-hictools convert_hic2 ${fastq_dir}/${s}_R1_BC.sam
-hictools convert_hic2 ${fastq_dir}/${s}_R3_BC.sam
+#hictools convert_hic2 ${fastq_dir}/${s}_R1_BC.sam $threads
+#hictools convert_hic2 ${fastq_dir}/${s}_R3_BC.sam $threads
+
+### NEW hictools end-to-end 1 step processing
+hictools end_to_end ${mode} ${fastq_dir}/${s} ${ref_10X}.fa $threads
 
 if [[ -f "${fastq_dir}/${s}_R1_BC_cov.fq.gz" && -f "${fastq_dir}/${s}_R3_BC_cov.fq.gz" ]]
 then
@@ -65,7 +69,7 @@ trim_galore -q 20 -j $threads --paired ${fastq_dir}/${s}_R1_BC_cov.fq.gz ${fastq
 # ### mapping
 (bwa mem -SP5M -T0 -t $threads ${ref} ${trim_dir}/${s}_R1_BC_cov_val_1.fq.gz ${trim_dir}/${s}_R3_BC_cov_val_2.fq.gz | samtools view -bhS - > ${map_dir}/${s}_${genome}.bam) 2>${map_dir}/${s}_${genome}.log
 
-### merge filesß
+### merge files
 if [[ -f "${old_map_dir}/${s}_${genome}.bam" ]]
 then
         echo "previous sequencing files found."
