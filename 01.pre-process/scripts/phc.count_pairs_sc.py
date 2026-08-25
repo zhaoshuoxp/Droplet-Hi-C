@@ -1,76 +1,79 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import argparse
-
-parser = argparse.ArgumentParser(description='filter bam based on barcode name')
-parser.add_argument('--input', type=str, dest="iput", help='.pairs or .pairs.gz input')
-parser.add_argument('--output', type=str, dest="oput", help='output .stat.csv prefix')
-
-args = parser.parse_args()
-
-import os
-import numpy as np
+import gzip
 import pandas as pd
 from time import perf_counter as pc
-import gzip
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Count valid pairs per barcode for scHi-C')
+    parser.add_argument('--input', type=str, dest="iput", required=True, help='.pairs or .pairs.gz input')
+    parser.add_argument('--output', type=str, dest="oput", required=True, help='output .stat.csv prefix')
+    return parser.parse_args()
 
 def run():
-    """ Run standard NMF on rank """
+    args = parse_args()
     start_time = pc()
-    """ init input files """
-    iiput = str(args.iput)
-    ooput = str(args.oput)
-    print("count contacts per cell...")
-    count_contacts(iiput, ooput)
-    end_time = pc()
-    print('Used (secs): ', end_time - start_time)
+
+    print(f"Counting contacts per cell from {args.iput}...")
+    count_contacts(args.iput, args.oput)
+
+    print(f"Used (secs): {pc() - start_time:.2f}")
 
 def count_contacts(iiput, ooput):
     cid = {}
-    with oppf(iiput, 'r') as infile:
-        for line in infile:
-            try:
-                dline = line.decode('utf8')
-            except AttributeError:
-                dline = line
-                pass
-            if dline[:1] == "#":
-                continue
-            readname, chrom1, pos1, chrom2, pos2, strand1, strand2, pair_type, cell1, cell2  = dline.strip("\n").split("\t")[:10]
-            if cell1 in cid:
-                cid[cell1]['total'] += 1
-            else: ### initialize
-                cid[cell1] = {'total': 1, 'mapped': 0, 'unmapped': 0, 'duplicate': 0, 'cis': 0, 'cis_1kb-': 0, 'cis_1kb+': 0, 'cis_10kb+': 0, 'trans': 0}
-            if pair_type.upper() in ["NN","XX"]: 
-                cid[cell1]['unmapped'] += 1
-            elif chrom1 != "!" and chrom2 != "!": ### should be equal with above?
-                cid[cell1]['mapped'] += 1
-                if pair_type.upper() == "DD":
-                    cid[cell1]['duplicates'] += 1
-                elif chrom1 == chrom2:
-                    cid[cell1]['cis'] += 1
-                    dist = np.abs(int(pos2) - int(pos1))
-                    if dist < 1000:
-                        cid[cell1]['cis_1kb-'] += 1
-                    if dist > 1000:
-                        cid[cell1]['cis_1kb+'] += 1
-                    if dist > 10000:
-                        cid[cell1]['cis_10kb+'] += 1
-                else:
-                    cid[cell1]['trans'] += 1
-            
-    cidd = pd.DataFrame.from_dict(cid)
-    ### filtering beofre save
-    # cidd = cidd.T.loc[cidd['total'] >= 50]
-    cidd.T.to_csv(ooput+".stat.csv", sep='\t')
+    cols = ['total', 'mapped', 'unmapped', 'duplicate', 'cis', 'cis_1kb-', 'cis_1kb+', 'cis_10kb+', 'trans']
 
-def oppf(filename, mode='r'):
-    if filename.endswith('.gz'):
-        return gzip.open(filename, mode) 
-    else:
-        return open(filename, mode)
+    open_func = gzip.open if iiput.endswith('.gz') else open
+
+    with open_func(iiput, 'rt', encoding='utf-8') as infile:
+        for line in infile:
+            if line.startswith("#"):
+                continue
+
+            sp = line.split("\t", 10)
+            if len(sp) < 9:
+                continue
+
+            chrom1, pos1, chrom2, pos2 = sp[1], sp[2], sp[3], sp[4]
+            pair_type = sp[7].upper()
+            cell1 = sp[8]
+
+            if cell1 not in cid:
+                cid[cell1] = {
+                    'total': 0, 'mapped': 0, 'unmapped': 0, 'duplicate': 0,
+                    'cis': 0, 'cis_1kb-': 0, 'cis_1kb+': 0, 'cis_10kb+': 0, 'trans': 0
+                }
+
+            cell_data = cid[cell1]
+            cell_data['total'] += 1
+
+            if pair_type in ("NN", "XX"):
+                cell_data['unmapped'] += 1
+            elif chrom1 != "!" and chrom2 != "!":
+                cell_data['mapped'] += 1
+
+                if pair_type == "DD":
+                    cell_data['duplicate'] += 1
+                elif chrom1 == chrom2:
+                    cell_data['cis'] += 1
+                    dist = abs(int(pos2) - int(pos1))
+
+                    if dist < 1000:
+                        cell_data['cis_1kb-'] += 1
+                    else:
+                        cell_data['cis_1kb+'] += 1
+
+                    if dist > 10000:
+                        cell_data['cis_10kb+'] += 1
+                else:
+                    cell_data['trans'] += 1
+
+    print("Formatting and saving data...")
+    cidd = pd.DataFrame.from_dict(cid, orient='index').reindex(columns=cols)
+    cidd.index.name = 'barcode'
+
+    cidd.to_csv(ooput + ".stat.csv", sep='\t')
 
 if __name__ == "__main__":
     run()
-
-

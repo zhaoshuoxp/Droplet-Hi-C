@@ -1,129 +1,220 @@
 #!/usr/bin/env python
 
 import argparse
-
-parser = argparse.ArgumentParser(description='extracts pairs.gz based on barcode name')
-parser.add_argument('--indir', type=str, dest="iput", help='input directory')
-parser.add_argument('--cluster', type=str, dest="cluster", help='four columns meta: sample.pairs.gz, library, barcode, cluster')
-parser.add_argument('--max', type=int, dest="maxf", default=1000, help='Max open files at the same time?')
-parser.add_argument('--outdir', type=str, dest="oput", help='output directory')
-parser.add_argument('--threads', type=int, dest="threads", default=4, help='Number of threads to use')
-
-args = parser.parse_args()
-
-import os
-import numpy as np
-import pandas as pd
-from time import perf_counter as pc
 import gzip
-import resource as res
+import os
+import resource
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
+from time import perf_counter
 
-def run():
-    dirPrefix = str(args.iput)
-    clusterf = args.cluster
-    outPrefix = str(args.oput)
-    max_open_files = int(args.maxf)
-    num_threads = int(args.threads)
-    start_time = pc()
-    print("split contacts...")
-    split_contacts(dirPrefix, outPrefix, clusterf, max_open_files, num_threads)
-    end_time = pc()
-    print('Used (secs): ', end_time - start_time)
+import pandas as pd
 
-def split_contacts(dirPrefix, outPrefix, clusterf, max_open_files, num_threads):
-    clust_dat = pd.read_csv(clusterf, sep="\t")
-    clust_dat["uniq_barcode"] = clust_dat.apply(lambda row: f"{row['library']}:{row['barcode']}", axis=1)
-    clust_dat_dict = pd.Series(clust_dat["cluster"].values, index=clust_dat["uniq_barcode"]).to_dict()
-    
-    # Create output directory if it doesn't exist
-    os.makedirs(outPrefix, exist_ok=True)
-    
-    # Get unique clusters and create output files
-    unique_clusters = pd.unique(clust_dat["cluster"])
-    outf_dict = {cls_id: os.path.join(outPrefix, f"{cls_id}.pairs") for cls_id in unique_clusters}
-    
-    # Create a lock for thread-safe file writing
-    file_locks = {cls_id: Lock() for cls_id in unique_clusters}
-    
-    ### writer header at once to prevent IO overhead
-    print("start writing header...")
-    sample_id = pd.unique(clust_dat["sample"])
-    samplef = os.path.join(dirPrefix, sample_id[0])
+
+def positive_int(value):
+    value = int(value)
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return value
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Extract per-cell pairs files based on barcode metadata."
+    )
+    parser.add_argument("--indir", dest="iput", required=True, help="Input directory")
+    parser.add_argument(
+        "--cluster",
+        required=True,
+        help="Four-column metadata: barcode, library, sample.pairs.gz, cluster",
+    )
+    parser.add_argument(
+        "--max",
+        dest="maxf",
+        type=positive_int,
+        default=1000,
+        help="Maximum number of output files open at once",
+    )
+    parser.add_argument("--outdir", dest="oput", required=True, help="Output directory")
+    parser.add_argument(
+        "--threads",
+        type=positive_int,
+        default=4,
+        help="Number of input files to process concurrently",
+    )
+    return parser.parse_args()
+
+
+class OutputWriter:
+    """Thread-safe, bounded LRU cache of append-only output handles."""
+
+    def __init__(self, output_paths, max_open_files):
+        self.output_paths = output_paths
+        self.max_open_files = max_open_files
+        self.handles = OrderedDict()
+        self.lock = Lock()
+
+    def write(self, cluster_id, line):
+        with self.lock:
+            handle = self.handles.pop(cluster_id, None)
+            if handle is None:
+                if len(self.handles) >= self.max_open_files:
+                    _, oldest_handle = self.handles.popitem(last=False)
+                    oldest_handle.close()
+                handle = open(self.output_paths[cluster_id], "a", encoding="utf-8")
+            self.handles[cluster_id] = handle
+            handle.write(line)
+
+    def close(self):
+        with self.lock:
+            while self.handles:
+                _, handle = self.handles.popitem(last=False)
+                handle.close()
+
+
+def open_pairs(filename, mode="rt"):
+    if filename.endswith(".gz"):
+        return gzip.open(filename, mode, encoding="utf-8")
+    return open(filename, mode, encoding="utf-8")
+
+
+def safe_open_file_limit(requested):
+    soft_limit, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft_limit == resource.RLIM_INFINITY:
+        return requested
+    return max(1, min(requested, max(1, soft_limit - 32)))
+
+
+def load_metadata(cluster_file):
+    metadata = pd.read_csv(cluster_file, sep="\t", dtype=str, keep_default_na=False)
+    required_columns = {"barcode", "library", "sample", "cluster"}
+    missing = required_columns.difference(metadata.columns)
+    if missing:
+        raise ValueError(
+            "Cluster metadata is missing columns: " + ", ".join(sorted(missing))
+        )
+    if metadata.empty:
+        raise ValueError("Cluster metadata contains no cells")
+    if (metadata[sorted(required_columns)] == "").to_numpy().any():
+        raise ValueError("Cluster metadata contains empty required values")
+
+    metadata["uniq_barcode"] = metadata["library"] + ":" + metadata["barcode"]
+    conflicts = metadata.groupby("uniq_barcode")["cluster"].nunique()
+    conflicts = conflicts[conflicts > 1]
+    if not conflicts.empty:
+        raise ValueError(
+            "A library/barcode pair maps to multiple clusters: "
+            + ", ".join(conflicts.index[:5])
+        )
+    return metadata
+
+
+def read_header(sample_path):
     header_lines = []
-    
-    # Read and save header
-    with oppf(samplef, 'rt') as infile:
-        for dline in infile:
-            if dline.startswith("#"):
-                header_lines.append(dline)
-            else:
+    with open_pairs(sample_path) as infile:
+        for line in infile:
+            if not line.startswith("#"):
                 break
-    header = "".join(header_lines)
-    
-    # Write headers to all output files
-    for ofile in outf_dict.values():
-        with open(ofile, "w") as p:
-            p.write(header)
-    print("finish writing header...")
+            header_lines.append(line)
+    return "".join(header_lines)
 
-    ### split cells by cluster using multiple threads
-    with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        futures = []
-        for sample in sample_id:
-            library_id = pd.unique(clust_dat.loc[clust_dat['sample'] == sample]['library'])
-            library = library_id[0]
-            futures.append(
+
+def split_contacts_worker(barcode_to_cluster, sample, library, input_dir, writer):
+    sample_path = os.path.join(input_dir, sample)
+    matched = 0
+    malformed = 0
+    cross_barcode = 0
+
+    with open_pairs(sample_path) as infile:
+        for line in infile:
+            if line.startswith("#"):
+                continue
+            fields = line.rstrip("\r\n").split("\t")
+            if len(fields) < 10:
+                malformed += 1
+                continue
+            if fields[-1] != fields[-2]:
+                cross_barcode += 1
+                continue
+
+            cell_id = f"{library}:{fields[-1]}"
+            cluster_id = barcode_to_cluster.get(cell_id)
+            if cluster_id is None:
+                continue
+
+            fields[-2:] = [cell_id, cell_id]
+            writer.write(cluster_id, "\t".join(fields) + "\n")
+            matched += 1
+
+    return sample, matched, malformed, cross_barcode
+
+
+def split_contacts(input_dir, output_dir, cluster_file, max_open_files, num_threads):
+    metadata = load_metadata(cluster_file)
+    barcode_to_cluster = (
+        metadata.drop_duplicates("uniq_barcode")
+        .set_index("uniq_barcode")["cluster"]
+        .to_dict()
+    )
+
+    os.makedirs(output_dir, exist_ok=True)
+    unique_clusters = metadata["cluster"].drop_duplicates().tolist()
+    output_paths = {
+        cluster_id: os.path.join(output_dir, f"{cluster_id}.pairs")
+        for cluster_id in unique_clusters
+    }
+
+    samples = metadata["sample"].drop_duplicates().tolist()
+    first_sample_path = os.path.join(input_dir, samples[0])
+    header = read_header(first_sample_path)
+    for output_path in output_paths.values():
+        with open(output_path, "w", encoding="utf-8") as outfile:
+            outfile.write(header)
+
+    sample_libraries = {}
+    for sample in samples:
+        libraries = metadata.loc[metadata["sample"] == sample, "library"].unique()
+        if len(libraries) != 1:
+            raise ValueError(
+                f"Input pairs file {sample!r} is assigned to multiple libraries: "
+                + ", ".join(libraries)
+            )
+        sample_libraries[sample] = libraries[0]
+
+    handle_limit = safe_open_file_limit(max_open_files)
+    writer = OutputWriter(output_paths, handle_limit)
+    worker_count = min(num_threads, len(samples))
+    try:
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = [
                 executor.submit(
                     split_contacts_worker,
-                    clust_dat_dict,
-                    outf_dict,
+                    barcode_to_cluster,
                     sample,
-                    library,
-                    dirPrefix,
-                    file_locks
+                    sample_libraries[sample],
+                    input_dir,
+                    writer,
                 )
-            )
-        
-        # Wait for all tasks to complete
-        for future in as_completed(futures):
-            future.result()
-
-def split_contacts_worker(clust_dat_dict, outf_dict, sample, library, dirPrefix, file_locks):
-    samplef = os.path.join(dirPrefix, sample)
-    open_files = {}
-    
-    try:
-        with oppf(samplef, 'rt') as infile:
-            for dline in infile:
-                if dline.startswith("#"):
-                    continue
-                fields = dline.strip("\n").split("\t")
-                if fields[-1] != fields[-2]:
-                    continue
-                cid = ":".join((library, fields[-1]))
-                if cid in clust_dat_dict:
-                    fields[-2:] = [cid, cid]
-                    wline = '\t'.join(fields)
-                    cls = clust_dat_dict[cid]
-                    ofile = outf_dict[cls]
-                    
-                    # Use lock to ensure thread-safe file writing
-                    with file_locks[cls]:
-                        if cls not in open_files:
-                            open_files[cls] = open(ofile, "a")
-                        open_files[cls].write(wline + "\n")
+                for sample in samples
+            ]
+            for future in as_completed(futures):
+                sample, matched, malformed, cross_barcode = future.result()
+                print(
+                    f"{sample}: wrote {matched} pairs; skipped "
+                    f"{cross_barcode} cross-barcode and {malformed} malformed records"
+                )
     finally:
-        # Ensure all files are closed when done
-        for file in open_files.values():
-            file.close()
+        writer.close()
 
-def oppf(filename, mode='r'):
-    if filename.endswith('.gz'):
-        return gzip.open(filename, mode) 
-    else:
-        return open(filename, mode)
+
+def main():
+    args = parse_args()
+    start_time = perf_counter()
+    print("Splitting contacts...")
+    split_contacts(args.iput, args.oput, args.cluster, args.maxf, args.threads)
+    print(f"Used (secs): {perf_counter() - start_time:.2f}")
+
 
 if __name__ == "__main__":
-    run()
+    main()

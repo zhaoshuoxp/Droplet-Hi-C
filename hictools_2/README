@@ -1,0 +1,2 @@
+To compile Cpp verison hictools:
+g++ -O3 -std=c++17 -fopenmp hictools.cpp -o hictools

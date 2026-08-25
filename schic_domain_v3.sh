@@ -1,7 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
 
 threads=24
 res_array=(10)
+sample=""
 
 while getopts "s:r:t:" opt; do
   case ${opt} in
@@ -17,6 +20,18 @@ if [ -z "${sample}" ]; then
   exit 1
 fi
 
+if [[ ! "${threads}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Threads must be a positive integer."
+    exit 1
+fi
+
+for r in "${res_array[@]}"; do
+    if [[ ! "${r}" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Resolution values must be positive integers."
+        exit 1
+    fi
+done
+
 current=$(pwd)
 imputed_matrix="${current}/hicluster/imputed_matrix"
 
@@ -25,9 +40,9 @@ for r in "${res_array[@]}"; do
 
     cell_table="${imputed_matrix}/${r}kb_resolution/filelist/cell_table.tsv"
 
-    if [[ ! -f "${cell_table}" ]]; then
-        echo "Cell table not found for ${r}kb at ${cell_table}"
-        continue
+    if [[ ! -s "${cell_table}" ]]; then
+        echo "Cell table not found for ${r}kb at ${cell_table}" >&2
+        exit 1
     fi
 
     mkdir -p "${imputed_matrix}/${r}kb_resolution/domain/"
